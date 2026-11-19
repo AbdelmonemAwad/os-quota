@@ -402,6 +402,58 @@ account.tick(state, conf(qv), OURS, pf, fw, tomorrow - 3600 + 180)
 check('a quota started by a clock since set back: started again now, then counted - not stopped until the clock came round',
       (q_state(state, U1)['since'], q_state(state, U1)['up']), (tomorrow - 3600 + 120, MB + 200000))
 
+# a clock that ran a day ahead at 10:00, a read in that day, and the clock put right at 10:05
+state = {}
+nine = utc(2026, 11, 20, 9, 0, 5)
+pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set())
+account.tick(state, conf(qv), OURS, pf, fw, nine)
+pf.text = pair(50123, 1200000, 0, 61, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, nine + 60)
+before_jump = (q_state(state, U1)['over'], sorted(pf.table))
+pf.text = pair(50123, 1300000, 0, 121, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 21, 10, 0, 5))
+in_the_future = (q_state(state, U1)['start'], q_state(state, U1)['up'], sorted(pf.table))
+LOGGED.clear()
+pf.text = pair(50123, 1350000, 0, 181, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 20, 10, 5, 5))
+check('a clock a day ahead and back: the turn it made early undone - today\'s cycle again, its 1.2 MB with the '
+      '0.1 MB counted meanwhile and what came since, the host blocked again, said once',
+      (before_jump, in_the_future, q_state(state, U1)['start'], q_state(state, U1)['up'], q_state(state, U1)['over'],
+       sorted(pf.table), len([m for m in LOGGED if 'back in the cycle' in m])),
+      ((True, ['192.0.2.10']), (utc(2026, 11, 21), 100000, []), utc(2026, 11, 20), 1350000, True, ['192.0.2.10'], 1))
+pf.text = pair(50123, 1350000, 0, 241, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 21, 0, 0, 30))
+check('... and the real midnight starts the next cycle: the host passes', (q_state(state, U1)['start'],
+                                                                         q_state(state, U1)['up'], pf.table),
+      (utc(2026, 11, 21), 0, set()))
+# a real-time clock that lost its time, before NTP sets it: nothing goes back, nothing is given
+state = {}
+pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set())
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 19, 23, 59, 5))
+pf.text = pair(50123, 300000, 0, 61, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 20, 0, 0, 5))
+pf.text = pair(50123, 1200000, 0, 121, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 20, 0, 1, 5))
+pf.text = pair(50123, 1200000, 0, 181, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2001, 1, 1, 0, 0, 5))
+lost = (q_state(state, U1)['start'], q_state(state, U1)['up'], sorted(pf.table))
+pf.text = pair(50123, 1250000, 0, 241, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 20, 0, 3, 5))
+check('a real-time clock at 2001 after a boot, then set by NTP: today\'s cycle kept through it, the host blocked '
+      'through it, and counted on', (lost, q_state(state, U1)['start'], q_state(state, U1)['up']),
+      ((utc(2026, 11, 20), 1200000, ['192.0.2.10']), utc(2026, 11, 20), 1250000))
+# a reset while the clock is ahead is not undone when it comes back
+state = {}
+pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set())
+account.tick(state, conf(qv), OURS, pf, fw, nine)
+pf.text = pair(50123, 1200000, 0, 61, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, nine + 60)
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 21, 10, 0, 5))
+account.reset(state, U1, conf(qv))
+account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 20, 10, 5, 5))
+check('a reset by hand while the clock was ahead: not undone when it comes back', (q_state(state, U1)['up'], pf.table),
+      (0, set()))
+
 # --- the cut with os-xgs-npu: a stand-in of its lists_cut.py, which keeps its record of the table on disk
 
 

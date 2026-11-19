@@ -72,6 +72,8 @@ LISTS_RECORD = '/var/db/os-xgs-npu/lists/' + settings.ALIAS + '.json'
 SLACK = 2               # seconds: pf prints a state's age in whole seconds
 NEAR = 0.8              # the page's "near the limit": 80 % of a quota, as os-netreport's cap
 WAIT = 50               # seconds a read waits for another one to end
+CLOCK = 3600            # seconds: a kept cycle that begins further than this ahead of the clock was begun by a
+                        # clock that ran ahead
 UUID = re.compile(r'^[0-9a-fA-F-]{36}$')
 
 
@@ -147,7 +149,8 @@ def pause(state):
 def fresh(q, begin, finish, now):
     return {'host': ident(q), 'cycle': q['cycle'], 'start': begin, 'end': finish, 'since': now,
             'up': 0, 'down': 0, 'minutes': 0, 'minute': None, 'minute_bytes': 0, 'minute_counted': False,
-            'over': False, 'over_at': None, 'why': [], 'addresses': [], 'own': False, 'reset_at': None}
+            'over': False, 'over_at': None, 'why': [], 'addresses': [], 'own': False, 'reset_at': None,
+            'last_cycle': None}
 
 
 def zero(qs):
@@ -156,7 +159,13 @@ def zero(qs):
 
 def quota_state(state, q, now):
     """The quota's kept state, made for a row new or given another host, and started again when its cycle
-    has turned - only forward: a clock set back does not start a cycle again."""
+    has turned - only forward: a clock set back does not start a cycle again.
+
+    A clock that ran ahead and has come back is the one case where a cycle goes back: when the cycle kept
+    begins more than CLOCK ahead of the clock, and the clock is inside the cycle the kept one followed,
+    that cycle goes on with its counts and what was counted since - so the turn the clock made early gives
+    neither a cycle for free nor one that does not turn at its real end. A clock further behind - a
+    real-time clock that lost its time, until NTP sets it - changes nothing: the cycle kept goes on."""
     begin, finish = cycles.current(q['cycle'], now)
     qs = state['quotas'].get(q['uuid'])
     if not isinstance(qs, dict) or qs.get('host') != ident(q):
@@ -164,8 +173,16 @@ def quota_state(state, q, now):
     elif qs.get('cycle') != q['cycle'] or begin > (qs.get('start') or 0):
         if qs.get('over'):
             log('%s: a new cycle - passes again' % name(q))
+        left = {'cycle': qs.get('cycle'), 'start': qs.get('start'), 'up': qs.get('up', 0),
+                'down': qs.get('down', 0), 'minutes': qs.get('minutes', 0)}
         zero(qs)
-        qs.update(cycle=q['cycle'], start=begin, end=finish)
+        qs.update(cycle=q['cycle'], start=begin, end=finish, last_cycle=left)
+    elif ((qs.get('start') or 0) - now > CLOCK and isinstance(qs.get('last_cycle'), dict) and
+          qs['last_cycle'].get('cycle') == q['cycle'] and qs['last_cycle'].get('start') == begin):
+        left = qs['last_cycle']
+        log('%s: the clock is back in the cycle it had left early - that cycle goes on, with its counts' % name(q))
+        qs.update(start=begin, up=qs.get('up', 0) + left.get('up', 0), down=qs.get('down', 0) + left.get('down', 0),
+                  minutes=qs.get('minutes', 0) + left.get('minutes', 0), last_cycle=None)
     # on again - or a clock set back past it, which would otherwise stop the count until it came round
     if qs.get('since') is None or qs['since'] > now:
         qs['since'] = now
@@ -424,6 +441,8 @@ def reset(state, which, conf):
             if qs.get('over'):
                 log('%s: reset by hand - passes again' % name(q))
             zero(qs)
+            # never undone: a clock come back does not give back the counts of the cycle it had left
+            qs['last_cycle'] = None
             qs['reset_at'] = int(time.time())
         done.append(q['uuid'])
     return done
