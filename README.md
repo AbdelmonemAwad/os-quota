@@ -148,7 +148,7 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   states, bytes up from the end that made it, the ids with a gateway or route-to beside them, only the
   watched hosts' states read past their first line, the same answer with and without the quick look
   through, what a cut kills, and 100,000 states read;
-- **the count, the cycles and the block** - `tools/test-account.py`, 85 checks with a stand-in pfctl and
+- **the count, the cycles and the block** - `tools/test-account.py`, 87 checks with a stand-in pfctl and
   firewall: the settings from a `config.xml`, the hosts taken and refused, the cycles in UTC and around
   the clock changes of Europe/Berlin, America/New_York and America/Santiago (which changes at
   midnight), what a connection gained, a connection begun since, one older, a tuple reused, a state

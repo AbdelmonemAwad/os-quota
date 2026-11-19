@@ -148,7 +148,8 @@ def quota_state(state, q, now):
             log('%s: a new cycle - passes again' % name(q))
         zero(qs)
         qs.update(cycle=q['cycle'], start=begin, end=finish)
-    if qs.get('since') is None:
+    # on again - or a clock set back past it, which would otherwise stop the count until it came round
+    if qs.get('since') is None or qs['since'] > now:
         qs['since'] = now
     qs['end'] = cycles.end(qs['cycle'], qs['start'])
     return qs
@@ -290,6 +291,8 @@ def tick(state, conf, alias, pf, fw, now):
     # 3-5. the counts, the minutes, the cycles
     before = state.get('conns') or {}
     previous = state.get('at')
+    if previous and previous > now:
+        previous = None             # a clock set back: the last read's time says nothing of what is new
     over = set()
     for q in on:
         qs = quota_state(state, q, now)

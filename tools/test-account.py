@@ -379,6 +379,16 @@ state['quotas'][U1].update(up=MB, over=True, why=['volume'])
 account.tick(state, conf(qv), OURS, pf, fw, tomorrow - 3600)
 check('a clock set back an hour: the cycle does not start again', (q_state(state, U1)['start'], q_state(state, U1)['up']),
       (utc(2026, 11, 21), MB))
+pf.text = pair(50123, 400000, 700000, 7000, ['0001', '0002']) + inbound(40000, 5, 5, 7000, '0101', host='192.0.2.10')
+account.tick(state, conf(qv), OURS, pf, fw, tomorrow - 3600 + 60)
+check('... and the count goes on from there, not an hour later', q_state(state, U1)['up'], MB + 100000)
+state['quotas'][U1]['since'] = tomorrow + 600       # the quota started by a clock that was ahead
+pf.text = pair(50123, 500000, 700000, 7060, ['0001', '0002']) + inbound(40000, 5, 5, 7060, '0101', host='192.0.2.10')
+account.tick(state, conf(qv), OURS, pf, fw, tomorrow - 3600 + 120)
+pf.text = pair(50123, 600000, 700000, 7120, ['0001', '0002']) + inbound(40000, 5, 5, 7120, '0101', host='192.0.2.10')
+account.tick(state, conf(qv), OURS, pf, fw, tomorrow - 3600 + 180)
+check('a quota started by a clock since set back: started again now, then counted - not stopped until the clock came round',
+      (q_state(state, U1)['since'], q_state(state, U1)['up']), (tomorrow - 3600 + 120, MB + 200000))
 
 # never the firewall's own address
 state = {}
