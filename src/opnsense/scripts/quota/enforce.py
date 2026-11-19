@@ -7,11 +7,11 @@
 of the connections such a host already has open.
 
 The table is the External alias aliases.php writes in Firewall: Aliases; plugins.inc.d/quota.inc blocks
-what comes in from it and what comes in for it, before the owner's rules, and lets it reach DNS and the
-web GUI on the firewall itself (settled point 7's starred choice), so nobody is locked out of the page
-that says why. It is made from the counts each time, never only edited: an address that should not be
-there goes, one missing is added, so a restart, a boot - pf's tables live in the kernel - or a table
-emptied by hand is put right at the next minute's run.
+what comes in from it and what comes in for it, before the owner's rules, all but DNS and the web GUI on
+the firewall itself (settled point 7's starred choice), which it leaves to the anti-lockout rule and the
+owner's own rules, as they were before the host went over. It is made from the counts each time, never
+only edited: an address that should not be there goes, one missing is added, so a restart, a boot - pf's
+tables live in the kernel - or a table emptied by hand is put right at the next minute's run.
 
 A block stops new connections only. The ones already open are cut (settled point 6):
 

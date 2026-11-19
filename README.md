@@ -47,10 +47,13 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   use;
 - **the block** - a host over a quota goes into the pf table `quota_over`, an alias of type External in
   Firewall: Aliases that the plugin makes, and rules the plugin registers - never among the owner's in
-  Firewall: Rules - block, on every interface, what comes in from it and every new connection to it,
-  before the owner's rules. It can still reach DNS and the web GUI on the firewall itself, so nobody -
-  the owner on his own PC among them - is locked out of the page that says why, and keeps its address:
-  OPNsense's own DHCP and IPv6 neighbour rules come first;
+  Firewall: Rules - block, on every interface and before the owner's rules, everything it sends past the
+  firewall, everything it sends to the firewall itself but DNS and the web GUI, and every new connection
+  to it. DNS and the web GUI are left out of the block, not let through: OPNsense's anti-lockout rule and
+  the owner's own rules decide them as they did before the host went over, so a quota locks nobody out -
+  the owner on his own PC among them - and lets nobody in where the owner's rules keep a network away
+  from the firewall. Every rule is a block. The host keeps its address: OPNsense's own DHCP and IPv6
+  neighbour rules come first;
 - **the cut** - a block stops new connections only. Where os-xgs-npu is installed, `quota_over` is put
   in XGS: Settings' "Cut open connections when listed": its next minute cuts the connections the host
   already has open, in hardware first where "Cut in hardware" is on. It is put there once, and the
@@ -123,7 +126,12 @@ measurement will change its default.
   the page says so;
 - **no totals shared between two firewalls in CARP** - after a failover the other one counts from what it
   last counted itself, if it ever was master;
-- **no web page for a blocked device** - it reaches the firewall's GUI and DNS, and nothing tells it more.
+- **no block through a port forward whose filter rule is "Pass"** - such a forward is written `rdr pass`,
+  and pf checks no filter rule for what it lets in, the plugin's blocks among them: a host over its
+  quota keeps what the forward carries - a server of its own behind a forward from the WAN, its traffic
+  redirected to a proxy on the firewall. A forward with "Add associated filter rule", or none, is blocked;
+- **no web page for a blocked device** - nothing tells it why. It keeps DNS and the firewall's GUI only
+  where the owner's rules give them to it.
 
 ## Not yet, and why
 
@@ -158,10 +166,12 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   here and not with os-xgs-npu, the firewall's own address never blocked, a MAC's addresses changing, the
   alias missing or not the plugin's, pfctl refusing, off, a CARP backup, the reset, the command line and
   its lock, the page's status;
-- **the firewall hook** - `tools/test-firewall-hook.py`, 22 checks, os-xgs-npu's harness: the rules
-  through each OPNsense's own method names (26.7, 26.7.3 to 26.7.8, 27.1), the web GUI's ports as core's
-  anti-lockout has them, nothing while off or without the plugin's own alias, a refusing object not
-  stopping the reload;
+- **the firewall hook** - `tools/test-firewall-hook.py`, 39 checks, os-xgs-npu's harness: the rules
+  through each OPNsense's own method names (26.7, 26.7.3 to 26.7.8, 27.1), nothing but blocks, and what
+  they do to a probe each way by pf's first quick match - DNS and the web GUI on the firewall left to the
+  anti-lockout and the owner's rules, everything else of a host over its quota blocked, a host under it
+  never matched - the web GUI's ports as core's anti-lockout has them, nothing while off or without the
+  plugin's own alias, a refusing object not stopping the reload;
 - **the alias** - `tools/test-aliases.php`, 28 checks, with stand-ins for OPNsense's Alias model and
   os-xgs-npu's XGS model: made, refreshed, switched off where a rule names it, removed, the owner's of the
   same name left; the cut list keeping the owner's entries, the alias put there once and recorded, not
