@@ -15,10 +15,11 @@
  * page says so.
  *
  * Where os-xgs-npu is installed its cut list holds the alias (settled point 6): a host that goes over its
- * quota has its open connections cut at lists_cut.py's next minute, in hardware first. It is put there
- * once and recorded in the plugin's settings (general.cut_added), as os-useridentity records its own: one
- * the owner takes out of XGS: Settings stays out - lists_cut.py would take every address the table holds
- * as new, and cut it.
+ * quota has its open connections cut at lists_cut.py's next minute, in hardware first where "Cut in
+ * hardware" is on - and by the plugin's own run where lists_cut.py would not take the address as new
+ * (scripts/quota/account.py, cut_here()). It is put there once and recorded in the plugin's settings
+ * (general.cut_added), as os-useridentity records its own: one the owner takes out of XGS: Settings stays
+ * out - lists_cut.py would take every address the table holds as new, and cut it.
  */
 
 namespace OPNsense\Quota;
