@@ -1,0 +1,14 @@
+#!/bin/sh
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+#
+# pf's tables live in the kernel, so a boot empties quota_over: a host over its quota would pass until
+# the first minute's run. One read at the end of the boot fills it again from the counts kept in
+# /var/db/os-quota - a cycle that turned while the firewall was down started again first. Off, it changes
+# nothing.
+
+P=/usr/local/opnsense/scripts/quota/account.py
+[ -x "${P}" ] || exit 0
+"${P}" > /dev/null 2>&1
+exit 0
