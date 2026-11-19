@@ -431,6 +431,28 @@ for alias, what in ((None, 'missing'), (dict(OURS, ours=False), 'the owner\'s'),
     account.tick(state, conf(qv), alias, pf, fw, t0 + 60)
     check('the alias %s: over, but no table written, nothing cut, the error said' % what,
           (q_state(state, U1)['over'], pf.table, pf.killed, bool(state.get('error'))), (True, {'198.51.100.200'}, [], True))
+# the owner's own alias named quota_over: his table never emptied - the plugin turned off after a host went
+# over, or after the plugin's alias had held hosts and became his
+state = {}
+owner = dict(OURS, ours=False, type='host')
+pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table={'203.0.113.50', '203.0.113.51'})
+account.tick(state, conf(qv), owner, pf, fw, t0)
+pf.text = pair(50123, 2 * MB, 0, 61, ['0001', '0002'])
+account.tick(state, conf(qv), owner, pf, fw, t0 + 60)
+account.tick(state, conf(qv, enabled=False), owner, pf, fw, t0 + 120)
+check('the owner\'s alias quota_over: a host over its quota, then the plugin off - his table as it was, nothing '
+      'asked of it but to read it', (q_state(state, U1)['over'], pf.table,
+                                    [c for c in pf.calls if ' -T ' in ' %s ' % c and not c.endswith('show')]),
+      (True, {'203.0.113.50', '203.0.113.51'}, []))
+state = {}
+pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set())
+account.tick(state, conf(qv), OURS, pf, fw, t0)
+pf.text = pair(50123, 2 * MB, 0, 61, ['0001', '0002'])
+account.tick(state, conf(qv), OURS, pf, fw, t0 + 60)
+pf.table |= {'203.0.113.50'}
+account.tick(state, conf(qv, enabled=False), dict(OURS, ours=False), pf, fw, t0 + 120)
+check('the plugin\'s alias made the owner\'s while hosts were in it, then the plugin off: the table left as it is',
+      pf.table, {'192.0.2.10', '203.0.113.50'})
 state = {}
 pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set(), fail=('add',))
 account.tick(state, conf(qv), OURS, pf, fw, t0)
@@ -496,13 +518,16 @@ with tempfile.TemporaryDirectory() as tmp:
     lock = os.path.join(tmp, 'account.lock')
     config = os.path.join(tmp, 'config.xml')
 
-    def write_config(enabled='1', alias=True):
+    def write_config(enabled='1', alias=True, owner=False):
+        mine = ('<alias uuid="a1"><enabled>1</enabled><name>quota_over</name><type>external</type>'
+                '<description>Quotas: hosts over their quota</description></alias>')
+        his = ('<alias uuid="b1"><enabled>1</enabled><name>quota_over</name><type>host</type>'
+               '<description>my own list</description></alias>')
         with open(config, 'w', encoding='utf-8') as handle:
             handle.write('<opnsense><OPNsense><Quota><general><enabled>%s</enabled></general><quotas><quota uuid="%s">'
                          '<enabled>1</enabled><host>192.0.2.10</host><volume>1</volume><cycle>day</cycle></quota></quotas>'
                          '</Quota><Firewall><Alias><aliases>%s</aliases></Alias></Firewall></OPNsense></opnsense>'
-                         % (enabled, U1, '<alias uuid="a1"><enabled>1</enabled><name>quota_over</name><type>external</type>'
-                                         '<description>Quotas: hosts over their quota</description></alias>' if alias else ''))
+                         % (enabled, U1, his if owner else (mine if alias else '')))
 
     def cli(*args, pf=None, fw=None):
         import io
@@ -524,9 +549,21 @@ with tempfile.TemporaryDirectory() as tmp:
     check('account.py --reset with no quota\'s id: refused', (code, out['status']), (0, 'failed'))
     code, out = cli('--reset', U1, pf=pf)
     check('account.py --reset UUID: reset, then a read - the host out of the table', (out['reset'], pf.table), ([U1], set()))
+    pf.table = {'192.0.2.10'}
     code, out = cli('--flush', pf=pf)
-    check('account.py --flush: the table emptied, the counting paused', (out['status'], account.load(path)['conns']),
-          ('ok', {}))
+    check('account.py --flush: the plugin\'s table emptied, the counting paused',
+          (out['status'], out['emptied'], pf.table, account.load(path)['conns']), ('ok', 1, set(), {}))
+    write_config(owner=True)
+    pf.table = {'203.0.113.50', '203.0.113.51'}
+    code, out = cli('--flush', pf=pf)
+    check('account.py --flush with the owner\'s alias quota_over (installing, upgrading or removing the plugin '
+          'while it is off): his table left, said', (out['emptied'], pf.table, 'not this plugin' in out.get('note', '')),
+          (None, {'203.0.113.50', '203.0.113.51'}, True))
+    write_config(alias=False)
+    code, out = cli('--flush', pf=pf)
+    check('account.py --flush with no alias of that name: the table, left by the plugin, emptied',
+          (out['emptied'], pf.table), (2, set()))
+    write_config()
     code, out = cli('--gone', pf=pf)
     check('account.py --gone with the alias there: the table kept', (out['killed'], pf.table), (False, set()))
     write_config(alias=False)
@@ -540,6 +577,10 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = cli(pf=pf)
     check('account.py, config.xml unreadable: failed, said, nothing changed', (code, out['status'], pf.calls),
           (0, 'failed', []))
+    pf.table = {'203.0.113.50'}
+    code, out = cli('--flush', pf=pf)
+    check('account.py --flush, config.xml unreadable - whose the table is cannot be told: left, said',
+          (out['emptied'], pf.table, 'could not be read' in out.get('note', '')), (None, {'203.0.113.50'}, True))
     write_config()
 
     class Broken(FakeFw):

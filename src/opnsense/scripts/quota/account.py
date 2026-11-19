@@ -26,11 +26,14 @@ read's per-connection counts - so a restart or a boot in the middle of a cycle l
 nothing twice; a boot then fills the table again (rc.syshook.d/start/70-quota).
 
 On a CARP backup nothing is counted or blocked: the master counts (settled point 15's starred choice).
-Off, nothing is counted and the table is emptied; the cycle's counts are kept.
+Off, nothing is counted and the table is emptied; the cycle's counts are kept. The table is emptied only
+when it is the plugin's: no alias of its name, or the plugin's own - an alias quota_over that is the
+owner's holds his addresses, never touched here.
 
     account.py                    one read: count, then block (cron, the page's Apply)
     account.py --reset UUID|all   a quota's counts of this cycle back to nothing, then a read
-    account.py --flush            the table emptied and the counting paused (the plugin off, its removal)
+    account.py --flush            the table emptied, when it is the plugin's, and the counting paused (the
+                                  plugin off, its removal)
     account.py --gone             the table taken out of pf once its alias is gone (Apply, removal)
 
 Each prints one JSON object and exits 0: it never fails its caller; what it could not do is in its answer,
@@ -115,6 +118,13 @@ def name(q):
 def ident(q):
     """What a quota's state is kept for: its host as read, so another host in the same row starts anew."""
     return '%s %s' % q['host'] if q['host'] else ''
+
+
+def owned(alias):
+    """Whether the pf table quota_over is this plugin's to empty: there is no alias of that name, or it is
+    the plugin's own External one. One of that name that is the owner's - or the plugin's made another kind
+    by hand - holds his addresses, and the plugin never touches them."""
+    return alias is None or (alias['ours'] and alias['type'] == 'external')
 
 
 def pause(state):
@@ -234,7 +244,7 @@ def tick(state, conf, alias, pf, fw, now):
     if not conf['enabled']:
         pause(state)
         state['role'] = None
-        if state.get('over'):
+        if state.get('over') and owned(alias):
             enforce.flush(pf)
         state['over'] = []
         answer['status'] = 'off'
@@ -323,11 +333,13 @@ def tick(state, conf, alias, pf, fw, now):
         answer['neighbours'] = note
     over -= mine
 
-    # 6. the block, and the cut where this plugin does it
+    # 6. the block, and the cut where this plugin does it. state['over'] is what the plugin put in the table
+    # - the addresses it empties when turned off - so only a table it wrote changes it.
     if alias is None:
         if over:
             note_error(state, 'the alias %s is not in Firewall: Aliases - Apply makes it: no host is blocked' % settings.ALIAS, now)
     elif not alias['ours']:
+        state['over'] = []
         if over:
             note_error(state, 'an alias named %s that is not this plugin\'s is in Firewall: Aliases: no host is blocked'
                        % settings.ALIAS, now)
@@ -346,7 +358,7 @@ def tick(state, conf, alias, pf, fw, now):
         if len(pf.errors) > known:
             note_error(state, '; '.join(pf.errors[known:]), now)
             answer['status'] = 'failed'
-    state['over'] = sorted(over)
+        state['over'] = sorted(over)
     answer['over'] = len(over)
     return answer
 
@@ -403,10 +415,18 @@ def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
         now = time.time()
         if argv[1:2] == ['--flush']:
             pause(state)
-            emptied = enforce.flush(pf)
-            state['over'] = []
+            answer = {'status': 'ok', 'emptied': None}
+            if not settings.read(config)['read']:
+                answer['note'] = 'config.xml could not be read: the table is left as it is'
+            elif not owned(settings.alias(config)):
+                answer['note'] = 'an alias named %s that is not this plugin\'s holds the table: left as it is' % settings.ALIAS
+                state['over'] = []
+            else:
+                answer['emptied'] = enforce.flush(pf)
+                state['over'] = []
             save(state, path)
-            print(json.dumps({'status': 'ok', 'emptied': emptied, 'errors': pf.errors}))
+            answer['errors'] = pf.errors
+            print(json.dumps(answer))
             return 0
         if argv[1:2] == ['--gone']:
             killed = False

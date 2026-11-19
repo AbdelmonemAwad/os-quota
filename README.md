@@ -124,6 +124,9 @@ measurement will change its default.
   address;
 - **never the firewall's own addresses** - a quota naming one counts nothing and blocks nothing, and
   the page says so;
+- **nothing with an alias `quota_over` that is the owner's** - while one of that name that the plugin did
+  not make is in Firewall: Aliases, no host is blocked, and its table is never emptied or changed - not
+  when the plugin is installed, turned off or removed; the page says so;
 - **no totals shared between two firewalls in CARP** - after a failover the other one counts from what it
   last counted itself, if it ever was master;
 - **no block through a port forward whose filter rule is "Pass"** - such a forward is written `rdr pass`,
