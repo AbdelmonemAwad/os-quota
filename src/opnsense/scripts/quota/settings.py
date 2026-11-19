@@ -25,7 +25,9 @@ CONFIG = '/conf/config.xml'
 # A minute of use is a minute in which the host moved more than this many kilobytes (1 KB = 1,000
 # bytes), both ways together. PROVISIONAL: the plan sets it from a lab measurement of an idle real
 # device on both appliances, which has not been taken yet (phase 0's A11 machine had no way out, so it
-# sent nothing). Quota.xml's default is the same number.
+# sent nothing). Settings' "Minute of use above" is empty unless the owner types a value, and empty is
+# this number - so a release that changes it changes it on every firewall left at the plugin's own value.
+# forms/general.xml's help names it.
 MINUTE_KB = 100
 
 # The pf table of the hosts over their quota: an External alias in Firewall: Aliases, written by
@@ -131,6 +133,7 @@ def read(path=None):
     general = root.find('OPNsense/Quota/general')
     if general is not None:
         out['enabled'] = _text(general, 'enabled', '0') == '1'
+        # empty, or nothing there: the plugin's own value
         out['minute_bytes'] = _int(_text(general, 'minute_threshold'), MINUTE_KB, 0, 1000000) * 1000
         out['cut_added'] = [u for u in _text(general, 'cut_added').split(',') if u.strip()]
     out['quotas'] = quota_rows(root)

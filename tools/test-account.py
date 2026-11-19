@@ -206,6 +206,11 @@ with tempfile.TemporaryDirectory() as tmp:
     check('nothing of the plugin\'s in config.xml: off, threshold 100 KB, no row, no XGS',
           (settings.read(config)['enabled'], settings.read(config)['minute_bytes'], settings.read(config)['quotas'],
            settings.read(config)['xgs']), (False, 100000, [], False))
+    with open(config, 'w', encoding='utf-8') as handle:
+        handle.write('<opnsense><OPNsense><Quota><general><enabled>1</enabled><minute_threshold/></general></Quota>'
+                     '</OPNsense></opnsense>')
+    check('the minute threshold left empty, as Settings saves it unless the owner types one: the plugin\'s own value',
+          (settings.read(config)['minute_bytes'], settings.MINUTE_KB * 1000), (100000, 100000))
 
 hosts_ok = [('192.0.2.10', ('address', '192.0.2.10')), ('2001:DB8::1', ('address', '2001:db8::1')),
             ('02:00:00:aa:bb:cc', ('mac', '02:00:00:aa:bb:cc')), ('0200.00aa.bbcc', None),

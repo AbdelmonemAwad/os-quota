@@ -188,8 +188,12 @@ namespace {
         return trim($xml);
     }
     check(element($xml, 'general/enabled/Default') === '0', 'the model: off by default');
-    check(element($xml, 'general/minute_threshold/Default') === '100' && strpos($settings, 'MINUTE_KB = 100') !== false,
-        'the model and settings.py: the same provisional minute threshold, 100 KB');
+    $form = file_get_contents($root . '/src/opnsense/mvc/app/controllers/OPNsense/Quota/forms/general.xml');
+    check(element($xml, 'general/minute_threshold/Default') === null &&
+        element($xml, 'general/minute_threshold/Required') === 'N' && strpos($settings, 'MINUTE_KB = 100') !== false &&
+        strpos($form, "Empty: the plugin's own value, 100 KB in this release") !== false,
+        "the minute threshold: empty by default - no default saved into config.xml, where a later release's " .
+        "could not reach it - and empty is settings.py's provisional 100 KB, which the help names");
     preg_match_all('#<(\w+)>[^<]*</\1>#', (string)element($xml, 'quotas/quota/cycle/OptionValues'), $found);
     $options = $found[1];
     check($options === ['day', 'week', 'month'] && strpos($settings, "CYCLES = ('day', 'week', 'month')") !== false &&

@@ -43,8 +43,8 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   connections: to and from the firewall itself too, so a proxy on it hides nothing, and what the
   coprocessor forwards where os-xgs-npu gives pf its counts;
 - **minutes of use** - a minute of the clock in which the host moved more than **Minute of use above**,
-  in Settings, both ways together: **100 KB, a provisional value** (below). 0 makes any byte a minute of
-  use;
+  in Settings, both ways together: empty unless the owner types a value, and empty is the plugin's own,
+  **100 KB, a provisional value** (below). 0 makes any byte a minute of use;
 - **the block** - a host over a quota goes into the pf table `quota_over`, an alias of type External in
   Firewall: Aliases that the plugin makes, and rules the plugin registers - never among the owner's in
   Firewall: Rules - block, on every interface and before the owner's rules, everything it sends past the
@@ -116,8 +116,10 @@ plugin existed:
 **Minute of use above - provisional.** The plan takes its value from a measurement of an idle real
 device on both appliances - what a phone or a laptop with a way to the internet moves in a minute while
 nobody uses it - and that has not been taken: phase 0's machine had no way out, and moved nothing in its
-half hour. Until it is, the default is 100 KB, a first value of this build; it is one setting, and the
-measurement will change its default.
+half hour. Until it is, the plugin's own value is 100 KB, a first value of this build. It is one setting,
+left empty unless the owner types a value, and empty is the plugin's own value, which is never written
+into config.xml: the release that takes the measured value changes it on every firewall where it is
+empty, and an owner's own value stays his.
 
 ## What it does not do
 

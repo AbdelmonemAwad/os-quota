@@ -18,14 +18,16 @@
                 <Default>0</Default>
             </enabled>
             <!-- T of the time quota: a minute of use is one in which the host moved more than this many
-                 kilobytes (1 KB = 1,000 bytes). 100 is PROVISIONAL: the plan takes it from a lab
-                 measurement of an idle real device on both appliances, not taken yet (settings.py). -->
+                 kilobytes (1 KB = 1,000 bytes). Empty by default, and empty is settings.py's MINUTE_KB,
+                 100, PROVISIONAL: the plan takes it from a lab measurement of an idle real device on
+                 both appliances, not taken yet. No default is written here, so the value a release
+                 takes from that measurement reaches every firewall whose owner did not type his own:
+                 a default saved into config.xml would stay there. -->
             <minute_threshold type="IntegerField">
-                <Required>Y</Required>
-                <Default>100</Default>
+                <Required>N</Required>
                 <MinimumValue>0</MinimumValue>
                 <MaximumValue>1000000</MaximumValue>
-                <ValidationMessage>Kilobytes, from 0 to 1000000.</ValidationMessage>
+                <ValidationMessage>Kilobytes, from 0 to 1000000, or empty for the plugin's own value.</ValidationMessage>
             </minute_threshold>
             <!--
                 Not a setting: the uuid of the plugin's alias when it put it in os-xgs-npu's cut list
