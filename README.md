@@ -154,7 +154,9 @@ empty, and an owner's own value stays his.
   connection in hardware and one through the host against a small quota, the block and the cut at the
   limit with the overshoot measured, many short connections, a time quota, a cycle's start, a reboot in
   the middle of a cycle, a filter reload while a host is blocked, removal - on the second XGS 3300, the
-  XGS 136 and a plain OPNsense - and the idle devices for Minute of use above.
+  XGS 136 and a plain OPNsense - and the idle devices for Minute of use above. With them, the block's
+  rules as pf loads them, a host over its quota on a network whose rules keep it away from the firewall,
+  and the cut after a boot, after the plugin off and on, and on a CARP master's return.
 - **IPv6 in hardware** - counted as IPv4 is by the code; phase 0's lab had no IPv6 to measure it with.
 - **the page in a browser** - not opened yet, in either theme or language.
 
@@ -169,15 +171,20 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   states, bytes up from the end that made it, the ids with a gateway or route-to beside them, only the
   watched hosts' states read past their first line, the same answer with and without the quick look
   through, what a cut kills, and 100,000 states read;
-- **the count, the cycles and the block** - `tools/test-account.py`, 87 checks with a stand-in pfctl and
-  firewall: the settings from a `config.xml`, the hosts taken and refused, the cycles in UTC and around
-  the clock changes of Europe/Berlin, America/New_York and America/Santiago (which changes at
-  midnight), what a connection gained, a connection begun since, one older, a tuple reused, a state
-  ending first, a restart from the saved state, a second quota on one host, the minutes of use and their
-  threshold, the cycle turning and a clock set back, the table filled, emptied and filled again, the cut
-  here and not with os-xgs-npu, the firewall's own address never blocked, a MAC's addresses changing, the
-  alias missing or not the plugin's, pfctl refusing, off, a CARP backup, the reset, the command line and
-  its lock, the page's status;
+- **the count, the cycles and the block** - `tools/test-account.py`, 109 checks with a stand-in pfctl and
+  firewall: the settings from a `config.xml` - the minute threshold left empty among them - the hosts
+  taken and refused, the cycles in UTC and around the clock changes of Europe/Berlin, America/New_York
+  and America/Santiago (which changes at midnight), what a connection gained, a connection begun since,
+  one older, a tuple reused, a state ending first, a restart from the saved state, a second quota on one
+  host, the minutes of use and their threshold, the cycle turning, a clock set back, a clock a day ahead
+  and back, a real-time clock at 2001 after a boot, the table filled, emptied and filled again, the cut
+  here without os-xgs-npu and, with a stand-in of its `lists_cut.py` keeping its record on disk, here
+  only where that would not cut - a boot, the plugin off and on, a CARP master's return, a Reset and a
+  second overrun, quota_over never listed or taken out by the owner, a record it cannot read - the
+  firewall's own address never blocked, a MAC's addresses changing, the alias missing or not the
+  plugin's, the owner's alias of that name never emptied, pfctl refusing, off, a CARP backup, the reset,
+  the command line and its lock, a read waiting for the lock while the removal takes its directory, the
+  page's status;
 - **the firewall hook** - `tools/test-firewall-hook.py`, 39 checks, os-xgs-npu's harness: the rules
   through each OPNsense's own method names (26.7, 26.7.3 to 26.7.8, 27.1), nothing but blocks, and what
   they do to a probe each way by pf's first quick match - DNS and the web GUI on the firewall left to the
@@ -189,19 +196,22 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   same name left; the cut list keeping the owner's entries, the alias put there once and recorded, not
   put back once the owner took it out; and `aliases.php` run as configd runs it;
 - **the model** - `tools/test-model.php`, 40 checks: the hosts taken and refused, a limit required,
-  minutes within the cycle, the model's XML in step with the scripts;
+  minutes within the cycle, the model's XML in step with the scripts - the minute threshold with no
+  default written, empty being the scripts' own value;
 - **the page's API** - `tools/test-mvc.php`, 19 checks: the status, Apply's order on and off, the Reset
   and its id, the rows;
-- **the page's script** - `tools/test-page.py`, 23 checks, under node with a stand-in jQuery: the cards,
-  the quiet lines, the grid's formatters, Reset asking first, Apply from each tab, and the markup and the
-  script in step;
-- **the installation** - `tools/test-install.py`, 31 checks, the installer, the removal, the package's
+- **the page's script** - `tools/test-page.py`, 26 checks, under node with a stand-in jQuery: the cards,
+  the quiet lines - XGS: Settings' cut in hardware first or not, quota_over taken out of its cut list or
+  never put there - the grid's formatters, Reset asking first, Apply from each tab, the markup and the
+  script in step, and the note under the grid on the overshoot and the block;
+- **the installation** - `tools/test-install.py`, 33 checks, the installer, the removal, the package's
   scripts, `place-menu.sh` and the boot's hook in a temporary root: every file laid down with its mode
   and taken away, the menu at XGS 62 or under Firewall, nothing copied with a syntax error, the table
-  taken out of pf, nothing done by the old package in an upgrade;
+  taken out of pf, nothing done by the old package in an upgrade, cron's line and the boot's hook gone
+  before a read in progress is ended, and a read ended again before the state goes;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
-- **the strings** - `tools/check-strings.py`: each of the 82 strings the GUI shows is in `source.json`;
-  21 have their Arabic in opnsense-arabic already, the other 61 wait for it there;
+- **the strings** - `tools/check-strings.py`: each of the 84 strings the GUI shows is in `source.json`;
+  21 have their Arabic in opnsense-arabic already, the other 63 wait for it there;
 - **the rest** - every installed file removed by the uninstaller (`tools/check-uninstall.sh`), `php -l`,
   `py_compile` and pyflakes, `sh -n`, XML and JSON, nothing private, no Arabic in the code, the copyright
   line; and, by hand, the page kit (kit).
