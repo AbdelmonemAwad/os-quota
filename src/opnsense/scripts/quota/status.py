@@ -71,9 +71,13 @@ def report(config=None, path=account.STATE, pf=None, project=account.PROJECT):
     quotas = state.get('quotas') if isinstance(state.get('quotas'), dict) else {}
     rows = [row(q, quotas.get(q['uuid'])) for q in conf['quotas']]
     listed = bool(alias and alias['uuid'] and alias['uuid'] in conf['cut_lists'])
+    # whether the plugin put its alias in the cut list itself (aliases.php's record): recorded and not
+    # listed, the owner took it out; neither, it has not been put there yet
+    recorded = bool(alias and alias['uuid'] and alias['uuid'] in conf['cut_added'])
     return {
         'enabled': conf['enabled'], 'read': conf['read'], 'project': os.path.isdir(project), 'xgs': conf['xgs'],
         'count_to_pf': conf['count_to_pf'], 'cut_in_hardware': conf['cut_in_hardware'], 'cut_listed': listed,
+        'cut_recorded': recorded,
         'alias': None if alias is None else {'ours': alias['ours'], 'enabled': alias['enabled'],
                                              'external': alias['type'] == 'external'},
         'table': None if held is None else len(held),

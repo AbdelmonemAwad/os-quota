@@ -108,7 +108,8 @@ function cards() {
 }
 function quiet() {
     const out = {};
-    ['qt-off', 'qt-project', 'qt-alone', 'qt-backup', 'qt-unlisted', 'qt-noalias', 'qt-notours'].forEach(function (id) {
+    ['qt-off', 'qt-project', 'qt-project-pf', 'qt-alone', 'qt-backup', 'qt-unlisted', 'qt-unlisted-new', 'qt-noalias',
+     'qt-notours'].forEach(function (id) {
         out[id] = elements[id] ? elements[id].shown : null;
     });
     return out;
@@ -139,7 +140,9 @@ out.on = show(base);
 out.off = show(Object.assign({}, base, { enabled: false, counts: { quotas: 0, over: 0, near: 0, used: 0 } }));
 out.error = show(Object.assign({}, base, { error: { at: 1763640000, message: 'pf states could not be read' } }));
 out.hardware = show(Object.assign({}, base, { project: true, count_to_pf: false, cut_listed: true }));
-out.unlisted = show(Object.assign({}, base, { project: true, count_to_pf: true }));
+out.pfonly = show(Object.assign({}, base, { project: true, count_to_pf: true, cut_listed: true, cut_in_hardware: false }));
+out.unlisted = show(Object.assign({}, base, { project: true, count_to_pf: true, cut_recorded: true }));
+out.unlisted_new = show(Object.assign({}, base, { project: true, count_to_pf: true, cut_recorded: false }));
 out.backup = show(Object.assign({}, base, { role: 'backup' }));
 out.noalias = show(Object.assign({}, base, { alias: null }));
 out.notours = show(Object.assign({}, base, { alias: { ours: false, enabled: true, external: false } }));
@@ -204,8 +207,8 @@ check('on: what the cards say under their figures', [out['on']['cards'][0][3], o
                                                     out['on']['cards'][2][3].split(' · ')[1]],
       ['blocked until their cycle starts again', '80 % or more of a quota', '12 connections'])
 check('on, without os-xgs-npu: the line that says the cut is done here, alone',
-      out['on']['quiet'], {'qt-off': False, 'qt-project': False, 'qt-alone': True, 'qt-backup': False, 'qt-unlisted': False,
-                           'qt-noalias': False, 'qt-notours': False})
+      out['on']['quiet'], {'qt-off': False, 'qt-project': False, 'qt-project-pf': False, 'qt-alone': True, 'qt-backup': False,
+                           'qt-unlisted': False, 'qt-unlisted-new': False, 'qt-noalias': False, 'qt-notours': False})
 check('off: grey cards, the line that says it', ([c[0] for c in out['off']['cards']], out['off']['cards'][0][2],
                                                  out['off']['quiet']['qt-off'], out['off']['quiet']['qt-alone']),
       (['', '', '', ''], 'off', True, False))
@@ -214,7 +217,14 @@ check('os-xgs-npu not giving pf the hardware\'s counts: a fifth card, and the li
       (len(out['hardware']['cards']), out['hardware']['cards'][4][:3], out['hardware']['quiet']['qt-project'],
        out['hardware']['quiet']['qt-unlisted']), (5, ['bad', 'Hardware traffic', 'not counted'], True, False))
 check('the hardware\'s counts given to pf: four cards', len(out['unlisted']['cards']), 4)
-check('quota_over not in the cut list: said', out['unlisted']['quiet']['qt-unlisted'], True)
+check('"Cut in hardware" off: the line for os-xgs-npu without "in hardware first"',
+      (out['pfonly']['quiet']['qt-project'], out['pfonly']['quiet']['qt-project-pf']), (False, True))
+check('quota_over taken out of the cut list by the owner: said, and not the line that says XGS: Settings cuts',
+      (out['unlisted']['quiet']['qt-unlisted'], out['unlisted']['quiet']['qt-unlisted-new'],
+       out['unlisted']['quiet']['qt-project'], out['unlisted']['quiet']['qt-project-pf']), (True, False, False, False))
+check('quota_over never put in the cut list: Apply puts it there, and until then the plugin cuts',
+      (out['unlisted_new']['quiet']['qt-unlisted-new'], out['unlisted_new']['quiet']['qt-unlisted'],
+       out['unlisted_new']['quiet']['qt-project']), (True, False, False))
 check('a CARP backup: said', out['backup']['quiet']['qt-backup'], True)
 check('no alias yet: said', (out['noalias']['quiet']['qt-noalias'], out['noalias']['quiet']['qt-notours']), (True, False))
 check('the owner\'s alias of that name: said', (out['notours']['quiet']['qt-notours'], out['notours']['quiet']['qt-noalias']),

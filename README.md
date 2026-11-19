@@ -59,7 +59,14 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   already has open, in hardware first where "Cut in hardware" is on. It is put there once, and the
   plugin keeps a record of it: one the owner takes out stays out, and the page says the host then keeps
   what it has open. Without os-xgs-npu the plugin cuts them itself, at once, by each state's id, as
-  OPNsense's own Sessions page does;
+  OPNsense's own Sessions page does - and with it too wherever os-xgs-npu's `lists_cut.py` would not:
+  it cuts only an address that its own record of the table's last run does not hold, so the plugin reads
+  that record (`/var/db/os-xgs-npu/lists/quota_over.json`) and cuts a host it already holds - put back
+  in the table after a boot, after the plugin was turned off and on, after a Reset and a second overrun
+  within that minute - and every host while `quota_over` was never put in the list (os-xgs-npu installed
+  since the last Apply; the page says so). The first read after a pause - the plugin on again, a CARP
+  backup become master - cuts every blocked host's connections: what it opened while nothing blocked it,
+  or what pfsync brought from the other firewall, is open still;
 - **a new cycle** - the count starts again from nothing and the host passes again; **Reset** on a
   quota's row does the same by hand, now. A boot in the middle of a cycle loses no count: the counts are
   kept in `/var/db/os-quota`, and a read at the end of the boot fills the table again;

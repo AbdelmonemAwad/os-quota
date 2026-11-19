@@ -26,6 +26,7 @@ What is checked:
 
     python3 tools/test-account.py"""
 import calendar
+import ipaddress
 import json
 import os
 import sys
@@ -124,9 +125,10 @@ def quota(uuid, host, volume=None, minutes=None, cycle='day', enabled=True, desc
             'volume': volume, 'minutes': minutes, 'cycle': cycle, 'description': description}
 
 
-def conf(*quotas, enabled=True, minute_kb=100):
+def conf(*quotas, enabled=True, minute_kb=100, cut_lists=(), cut_added=()):
     return {'read': True, 'enabled': enabled, 'minute_bytes': minute_kb * 1000, 'quotas': list(quotas),
-            'xgs': False, 'cut_lists': [], 'count_to_pf': None, 'cut_in_hardware': None, 'cut_added': []}
+            'xgs': bool(cut_lists or cut_added), 'cut_lists': list(cut_lists), 'count_to_pf': None,
+            'cut_in_hardware': None, 'cut_added': list(cut_added)}
 
 
 OURS = {'uuid': 'a0000000-0000-4000-8000-000000000001', 'enabled': True, 'type': 'external', 'ours': True}
@@ -362,10 +364,15 @@ pf.table = set()
 account.tick(state, conf(qv), OURS, pf, fw, t0 + 180)
 check('the table emptied by hand (or a boot): filled again at the next read, and cut again', (pf.table, len(pf.killed)),
       ({'192.0.2.10'}, 3))
-# with os-xgs-npu
+# with os-xgs-npu, quota_over in its cut list and new to lists_cut.py's record of the table
+LISTED = {'cut_lists': ['o1', OURS['uuid']], 'cut_added': [OURS['uuid']]}
+records = tempfile.TemporaryDirectory()
+account.LISTS_RECORD = os.path.join(records.name, 'quota_over.json')
+with open(account.LISTS_RECORD, 'w', encoding='utf-8') as handle:
+    json.dump(['198.51.100.200/32'], handle)
 state2 = json.loads(json.dumps(state))
 pf2 = FakePf(pf.text, table=set())
-account.tick(state2, conf(qv), OURS, pf2, FakeFw(project=True), t0 + 240)
+account.tick(state2, conf(qv, **LISTED), OURS, pf2, FakeFw(project=True), t0 + 240)
 check('with os-xgs-npu: in the table, nothing cut here - XGS: Settings\' cut list does it', (pf2.table, pf2.killed),
       ({'192.0.2.10'}, []))
 # a new cycle
@@ -389,6 +396,104 @@ pf.text = pair(50123, 600000, 700000, 7120, ['0001', '0002']) + inbound(40000, 5
 account.tick(state, conf(qv), OURS, pf, fw, tomorrow - 3600 + 180)
 check('a quota started by a clock since set back: started again now, then counted - not stopped until the clock came round',
       (q_state(state, U1)['since'], q_state(state, U1)['up']), (tomorrow - 3600 + 120, MB + 200000))
+
+# --- the cut with os-xgs-npu: a stand-in of its lists_cut.py, which keeps its record of the table on disk
+
+
+def lists_cut(pf):
+    """os-xgs-npu's lists_cut.py for the table quota_over, as its run compares: what the table holds that
+    its record of the last run does not is new, and every state with an end in it is killed; then the
+    record is what the table holds now. No record: everything is new (its first run)."""
+    now = set(pf.table or ())
+    try:
+        with open(account.LISTS_RECORD, encoding='utf-8') as handle:
+            before = set(json.load(handle))
+    except (OSError, ValueError):
+        before = None
+    new = {a for a in now if before is None or str(ipaddress.ip_network(a)) not in before}
+    killed = enforce.cut(pf, sorted(new))
+    with open(account.LISTS_RECORD, 'w', encoding='utf-8') as handle:
+        json.dump(sorted(str(ipaddress.ip_network(a)) for a in now), handle)
+    return killed
+
+
+def gone_over(settings_=LISTED, firewall=None):
+    """A host gone over its volume quota at t0 + 60, os-xgs-npu's lists_cut.py run once before."""
+    if os.path.exists(account.LISTS_RECORD):
+        os.remove(account.LISTS_RECORD)
+    state = {}
+    pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set())
+    firewall = firewall or FakeFw(project=True)
+    account.tick(state, conf(qv, **settings_), OURS, pf, firewall, t0)
+    lists_cut(pf)
+    pf.text = pair(50123, 2 * MB, 0, 61, ['0001', '0002']) + inbound(40000, 5, 5, 61, '0101', host='192.0.2.10')
+    account.tick(state, conf(qv, **settings_), OURS, pf, firewall, t0 + 60)
+    return state, pf
+
+
+ALL = ['0001/44128282', '0002/44128282', '0101/44128282']
+LATER = ['0201/44128282', '0202/44128282']                 # what the host opened since
+state, pf = gone_over()
+here = sorted(pf.killed)
+check('with os-xgs-npu: a host gone over, new to lists_cut.py - nothing cut here, all of it at its next run',
+      (here, lists_cut(pf), sorted(pf.killed)), ([], 3, ALL))
+# a reboot: pf's table empty, the record of lists_cut.py's last run still holding the host
+pf.table, pf.killed = set(), []
+pf.text = pair(50300, 0, 0, 5, ['0201', '0202'])
+answer = account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 120)
+check('a boot: the table filled again, and the host\'s connections cut here - lists_cut.py, its record from before '
+      'the boot holding the host, would never take it as new', (pf.table, answer['added'], sorted(pf.killed),
+                                                              lists_cut(pf)), ({'192.0.2.10'}, 1, LATER, 0))
+# turned off and on: off empties the table and takes quota_over out of the cut list, so lists_cut.py stops
+# looking at it and keeps its record
+state, pf = gone_over()
+lists_cut(pf)
+account.tick(state, conf(qv, enabled=False, **LISTED), OURS, pf, FakeFw(project=True), t0 + 120)
+pf.text, pf.killed = pair(50300, 0, 0, 5, ['0201', '0202']), []
+account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 180)
+check('turned off, then on again: the host back in the table and its connections cut here, not left to a '
+      'lists_cut.py whose record still holds it', (pf.table, sorted(pf.killed), lists_cut(pf)), ({'192.0.2.10'}, LATER, 0))
+# CARP: master, backup a while, master again - the host in the table all along
+state, pf = gone_over()
+lists_cut(pf)
+account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True, role='backup'), t0 + 120)
+pf.text, pf.killed = pair(50300, 0, 0, 5, ['0201', '0202']), []         # pfsync's copies from the other one
+answer = account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 180)
+check('a CARP master again, the host in its table all along: what pfsync brought of it cut here',
+      (answer['added'], sorted(pf.killed), lists_cut(pf)), (0, LATER, 0))
+state, pf = gone_over(firewall=FakeFw())
+account.tick(state, conf(qv), OURS, pf, FakeFw(role='backup'), t0 + 120)
+pf.text, pf.killed = pair(50300, 0, 0, 5, ['0201', '0202']), []
+account.tick(state, conf(qv), OURS, pf, FakeFw(), t0 + 180)
+check('... and without os-xgs-npu the same', sorted(pf.killed), LATER)
+pf.killed = []
+account.tick(state, conf(qv), OURS, pf, FakeFw(), t0 + 240)
+check('... once: the next read cuts nothing again', pf.killed, [])
+# a reset, and over again before lists_cut.py's next run: its record still holds the host
+state, pf = gone_over()
+lists_cut(pf)
+account.reset(state, U1, conf(qv, **LISTED))
+account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 70)
+pf.text, pf.killed = (pair(50123, 4 * MB, 0, 75, ['0001', '0002']) + pair(50300, 0, 0, 5, ['0201', '0202'])), []
+account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 80)
+check('reset, then over again within lists_cut.py\'s minute: cut here', (pf.table, sorted(pf.killed)),
+      ({'192.0.2.10'}, ['0001/44128282', '0002/44128282'] + LATER))
+# quota_over never put in the cut list - os-xgs-npu installed since the last Apply
+state, pf = gone_over(settings_={'cut_lists': ['o1']})
+check('quota_over never put in XGS: Settings\' cut list (os-xgs-npu installed since the last Apply): cut here, at once',
+      sorted(pf.killed), ALL)
+# taken out of it by the owner
+state, pf = gone_over(settings_={'cut_lists': ['o1'], 'cut_added': [OURS['uuid']]})
+check('quota_over taken out of the cut list by the owner: nothing cut - his choice', pf.killed, [])
+# a record that cannot be read
+state, pf = gone_over()
+with open(account.LISTS_RECORD, 'w', encoding='utf-8') as handle:
+    handle.write('{"not": "a list"}')
+pf.table, pf.killed = set(), []
+account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 120)
+check('lists_cut.py\'s record not a list as it writes it: cut here - twice costs nothing, never costs the quota',
+      sorted(pf.killed), ALL)
+records.cleanup()
 
 # never the firewall's own address
 state = {}
@@ -681,8 +786,10 @@ with tempfile.TemporaryDirectory() as tmp:
            got['cut_listed'], got['project'], got['alias']),
           (80.0, 50.0, ['volume'], 1, True, True, {'ours': True, 'enabled': True, 'external': True}))
     check('status: every key the page reads', sorted(got),
-          sorted(['alias', 'count_to_pf', 'counts', 'cut_in_hardware', 'cut_listed', 'enabled', 'error', 'last',
-                  'minute_bytes', 'near_percent', 'project', 'quotas', 'read', 'role', 'table', 'xgs']))
+          sorted(['alias', 'count_to_pf', 'counts', 'cut_in_hardware', 'cut_listed', 'cut_recorded', 'enabled', 'error',
+                  'last', 'minute_bytes', 'near_percent', 'project', 'quotas', 'read', 'role', 'table', 'xgs']))
+    check('status: quota_over in the cut list, not put there by the plugin (its record empty)',
+          (got['cut_listed'], got['cut_recorded']), (True, False))
     check('status of a row: every key the grid reads', sorted(got['quotas'][0]),
           sorted(['addresses', 'cycle', 'description', 'down', 'enabled', 'end', 'host', 'kind', 'minutes',
                   'minutes_limit', 'over', 'over_at', 'percent', 'reset_at', 'start', 'state',

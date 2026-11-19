@@ -19,7 +19,9 @@ Each read:
      threshold Settings gives, both ways together - PROVISIONAL default, see settings.MINUTE_KB;
   5. a quota whose cycle has turned starts again from nothing: its host passes again;
   6. the addresses of every host over a quota put in the table, the others taken out (enforce.py), and
-     without os-xgs-npu the connections of a host that has just gone over cut at once.
+     the connections such a host has open cut: by XGS: Settings' cut list where os-xgs-npu is installed
+     (settled point 6), here at once without it - and here too whenever os-xgs-npu's lists_cut.py would
+     not take the address as newly listed (cut_here()).
 
 Everything is kept in /var/db/os-quota/state.json after each read - the counts of the cycle, the last
 read's per-connection counts - so a restart or a boot in the middle of a cycle loses no count and counts
@@ -41,6 +43,7 @@ in the page's Last error and in the system log.
 """
 
 import fcntl
+import ipaddress
 import json
 import os
 import re
@@ -63,6 +66,9 @@ STATE_DIR = '/var/db/os-quota'
 STATE = STATE_DIR + '/state.json'
 LOCK = STATE_DIR + '/account.lock'
 PROJECT = '/usr/local/opnsense/scripts/xgs'
+# os-xgs-npu's lists_cut.py keeps, for each table it watches, what the table held at its last run - one
+# file a table, by its name (its snapshot_path()) - and cuts only the addresses that file does not hold
+LISTS_RECORD = '/var/db/os-xgs-npu/lists/' + settings.ALIAS + '.json'
 SLACK = 2               # seconds: pf prints a state's age in whole seconds
 NEAR = 0.8              # the page's "near the limit": 80 % of a quota, as os-netreport's cap
 WAIT = 50               # seconds a read waits for another one to end
@@ -129,9 +135,11 @@ def owned(alias):
 
 def pause(state):
     """Counting stopped - the plugin off, this firewall a CARP backup: the last read's connections are
-    forgotten, and each quota counts again from the read that finds it on, never what passed meanwhile."""
+    forgotten, and each quota counts again from the read that finds it on, never what passed meanwhile.
+    Nothing here blocks meanwhile either, so the read that finds it on looks at every host it blocks."""
     state['conns'] = {}
     state['at'] = None
+    state['blocking'] = False
     for qs in (state.get('quotas') or {}).values():
         qs['since'] = None
 
@@ -234,6 +242,40 @@ def note_error(state, message, now):
     state['error'] = {'at': int(now), 'message': message, 'logged': logged}
 
 
+def cut_here(fresh, conf, alias, project, record=None):
+    """Which of `fresh` - addresses the table has just gained, or holds on the first read after a pause -
+    this read cuts itself.
+
+    Without os-xgs-npu, all of them: nothing else would. With it, XGS: Settings' cut list does (settled
+    point 6): lists_cut.py drops the coprocessor's flows first, then kills the states, at its next minute.
+    But it cuts only what is new to it - an address its own record of the table's last run does not hold -
+    so an address that was in the table then it never cuts: one put back after a boot (the record outlives
+    it), after the plugin was turned off and on, on a CARP master come back, or after a Reset and a second
+    overrun within its minute. Those are cut here, as is everything while the alias was never put in its
+    list (os-xgs-npu installed since the last Apply). Where the owner took it out of the list, nothing is
+    cut: his choice stands, and the page says so. A record that cannot be read leaves the cut here too: a
+    connection cut twice costs nothing, one never cut costs the quota."""
+    fresh = set(fresh)
+    if not project or not fresh:
+        return fresh
+    if alias['uuid'] not in conf['cut_lists']:
+        return set() if alias['uuid'] in conf['cut_added'] else fresh
+    try:
+        with open(record or LISTS_RECORD, encoding='utf-8') as handle:
+            seen = json.load(handle)
+    except (OSError, ValueError):
+        return fresh
+    if not isinstance(seen, list):
+        return fresh
+    held = set()
+    for item in seen:
+        try:
+            held.add(ipaddress.ip_network(item, strict=False))
+        except (TypeError, ValueError):
+            continue
+    return {a for a in fresh if ipaddress.ip_network(a) in held}
+
+
 def tick(state, conf, alias, pf, fw, now):
     """One read, on the state kept (changed in place): what it found, as the JSON answer."""
     state.setdefault('quotas', {})
@@ -334,7 +376,10 @@ def tick(state, conf, alias, pf, fw, now):
     over -= mine
 
     # 6. the block, and the cut where this plugin does it. state['over'] is what the plugin put in the table
-    # - the addresses it empties when turned off - so only a table it wrote changes it.
+    # - the addresses it empties when turned off - so only a table it wrote changes it; state['blocking'],
+    # whether the last read's table and rules were in force.
+    resumed = not state.get('blocking')
+    state['blocking'] = False
     if alias is None:
         if over:
             note_error(state, 'the alias %s is not in Firewall: Aliases - Apply makes it: no host is blocked' % settings.ALIAS, now)
@@ -351,10 +396,15 @@ def tick(state, conf, alias, pf, fw, now):
         result = enforce.sync(pf, over)
         added, removed = result if result else ([], [])
         answer['added'], answer['removed'] = len(added), len(removed)
-        if added and not fw.project:
-            answer['cut'] = enforce.cut(pf, added)
+        # what the table gained; and on the first read after a pause - the plugin on again, this firewall
+        # master again - every host in it: what it opened while nothing here blocked it, or what pfsync
+        # brought from the other firewall, is open still
+        to_cut = cut_here(set(added) | (over if resumed else set()), conf, alias, fw.project)
+        if to_cut:
+            answer['cut'] = enforce.cut(pf, sorted(to_cut))
             if answer['cut']:
-                log('%d open connection(s) of %d host address(es) over their quota cut' % (answer['cut'], len(added)))
+                log('%d open connection(s) of %d host address(es) over their quota cut' % (answer['cut'], len(to_cut)))
+        state['blocking'] = True
         if len(pf.errors) > known:
             note_error(state, '; '.join(pf.errors[known:]), now)
             answer['status'] = 'failed'

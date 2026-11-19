@@ -147,11 +147,16 @@
             }
 
             const alias = data.alias;
+            /* the plugin's alias, not in XGS: Settings' cut list: taken out by the owner (recorded), or not
+               put there yet - os-xgs-npu installed since the last Apply - when the plugin cuts itself */
+            const unlisted = on && !!data.project && !!alias && alias.ours && !data.cut_listed;
             $('#qt-off').toggle(!on);
-            $('#qt-project').toggle(on && !!data.project);
+            $('#qt-project').toggle(on && !!data.project && !unlisted && data.cut_in_hardware !== false);
+            $('#qt-project-pf').toggle(on && !!data.project && !unlisted && data.cut_in_hardware === false);
             $('#qt-alone').toggle(on && !data.project);
             $('#qt-backup').toggle(on && data.role === 'backup');
-            $('#qt-unlisted').toggle(on && !!data.project && !!alias && alias.ours && !data.cut_listed);
+            $('#qt-unlisted').toggle(unlisted && !!data.cut_recorded);
+            $('#qt-unlisted-new').toggle(unlisted && !data.cut_recorded);
             $('#qt-noalias').toggle(on && !alias);
             $('#qt-notours').toggle(on && !!alias && !alias.ours);
         }
@@ -300,9 +305,11 @@
     <button id="refreshAct" class="btn btn-default btn-xs pull-right" type="button" title="{{ lang._('Refresh') }}"><i class="fa fa-fw fa-refresh"></i></button>
     <span id="qt-off" style="display: none;">{{ lang._('Quotas is off: nothing is counted and no host is blocked.') }}</span>
     <span id="qt-project" style="display: none;">{{ lang._('os-xgs-npu is installed: a connection in hardware is counted through its pf states, and a host that goes over its quota has its open connections cut by XGS: Settings within a minute, in hardware first.') }}</span>
+    <span id="qt-project-pf" style="display: none;">{{ lang._('os-xgs-npu is installed: a connection in hardware is counted through its pf states, and a host that goes over its quota has its open connections cut by XGS: Settings within a minute.') }}</span>
     <span id="qt-alone" style="display: none;">{{ lang._('Without os-xgs-npu pf alone carries the traffic: a host that goes over its quota has its open connections cut at once.') }}</span>
     <span id="qt-backup" class="text-warning" style="display: none;">{{ lang._('This firewall is a CARP backup: the master counts and blocks, and nothing is counted here.') }}</span>
     <span id="qt-unlisted" class="text-warning" style="display: none;">{{ lang._('quota_over is not in the cut list of XGS: Settings: a host that goes over its quota keeps the connections it has open.') }}</span>
+    <span id="qt-unlisted-new" class="text-warning" style="display: none;">{{ lang._('quota_over is not in the cut list of XGS: Settings yet - Apply puts it there. Until then this plugin cuts the open connections of a host that goes over its quota itself, at once.') }}</span>
     <span id="qt-noalias" class="text-warning" style="display: none;">{{ lang._('The alias quota_over is not made yet: Apply makes it. Until then no host is blocked.') }}</span>
     <span id="qt-notours" class="text-warning" style="display: none;">{{ lang._('An alias named quota_over that is not this plugin\'s is in Firewall: Aliases: no host is blocked until it is renamed.') }}</span>
 </div>

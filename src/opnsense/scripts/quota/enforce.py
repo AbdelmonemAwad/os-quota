@@ -21,7 +21,11 @@ A block stops new connections only. The ones already open are cut (settled point
     on - within a minute (34 and 60 s measured, os-xgs-npu's lists-cut-2026-10-19);
   - without os-xgs-npu, here and at once: every state of an address the table gained, either end, killed
     by its id as OPNsense's own Sessions page kills one (pfctl -k id -k id/creator). The states are read
-    again after the table has the address, so one opened in between is not missed.
+    again after the table has the address, so one opened in between is not missed;
+  - here too, with os-xgs-npu, what lists_cut.py would never take as gained - an address its record of
+    the table's last run already holds (after a boot, the plugin turned off and on, a CARP master's
+    return, a Reset and a second overrun within its minute) - and everything while quota_over was never
+    put in its list; and on the first read after a pause, every host the table holds (account.cut_here()).
 
 Leaving the table cuts nothing: a host whose cycle starts again just passes again.
 """
