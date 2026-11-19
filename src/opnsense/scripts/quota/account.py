@@ -451,10 +451,11 @@ def reset(state, which, conf):
 class Lock:
     """One read at a time: cron's, the page's and a reset's would otherwise count the same bytes twice."""
 
-    def __init__(self, path=LOCK, wait=WAIT):
+    def __init__(self, path=LOCK, wait=None):
         self.path = path
-        self.wait = wait
+        self.wait = WAIT if wait is None else wait
         self.handle = None
+        self.gone = False
 
     def __enter__(self):
         os.makedirs(os.path.dirname(self.path), mode=0o750, exist_ok=True)
@@ -463,11 +464,19 @@ class Lock:
         while True:
             try:
                 fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return True
+                break
             except OSError:
                 if time.monotonic() >= give_up:
                     return False
                 time.sleep(0.5)
+        # The plugin's removal takes /var/db/os-quota away, lock and all: a read that waited for the lock
+        # meanwhile holds a file that is no longer there, and must not make the directory again with its
+        # counts in it.
+        try:
+            self.gone = not os.path.samestat(os.stat(self.path), os.fstat(self.handle.fileno()))
+        except OSError:
+            self.gone = True
+        return not self.gone
 
     def __exit__(self, *args):
         self.handle.close()
@@ -475,7 +484,11 @@ class Lock:
 
 def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
     pf = pf or enforce.Pf()
-    with Lock(lock) as held:
+    one = Lock(lock)
+    with one as held:
+        if not held and one.gone:
+            print(json.dumps({'status': 'removed', 'message': 'Quotas is being removed: nothing done'}))
+            return 0
         if not held:
             print(json.dumps({'status': 'busy', 'message': 'another read was still running'}))
             return 0

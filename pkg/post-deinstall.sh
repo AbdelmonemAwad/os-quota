@@ -25,7 +25,9 @@ rmdir /usr/local/opnsense/mvc/app/models/OPNsense/Quota/Menu /usr/local/opnsense
 rm -f /var/lib/php/tmp/opnsense_menu_cache.xml /tmp/opnsense_menu_cache.xml
 
 # Nor what Python compiles beside a script it imports, which would keep the scripts' directory; nor the
-# counts and the last read in /var/db. The plugin's directories go once empty.
+# counts and the last read in /var/db - after a read cron started before pkg took its line away has been
+# ended: the scripts are gone, so none starts after this. The plugin's directories go once empty.
+/bin/pkill -f '/usr/local/opnsense/scripts/[q]uota/' 2> /dev/null || true
 rm -rf /usr/local/opnsense/scripts/quota/__pycache__ /var/db/os-quota
 for d in /usr/local/opnsense/scripts/quota /usr/local/opnsense/mvc/app/library/OPNsense/Quota; do
 	[ -d "${d}" ] && find "${d}" -depth -type d -empty -delete 2> /dev/null

@@ -8,16 +8,18 @@
 # files, its state in /var/db/os-quota (the counts with it), and the table taken out of pf. Kept: the
 # settings in config.xml.
 
-# a read in progress, then the table and the alias, while the files that empty and remove them are there;
-# the brackets keep the pattern from matching a shell that carries this text
+# The minute's run and the boot's read first, so that neither starts a read while the plugin goes - cron
+# reads its files again at the next minute - then a read in progress, then the table and the alias, while
+# the files that empty and remove them are there. The brackets keep the pattern from matching a shell that
+# carries this text.
+rm -f /usr/local/etc/cron.d/quota
+rm -f /usr/local/etc/rc.syshook.d/start/70-quota
 /bin/pkill -f '/usr/local/opnsense/scripts/[q]uota/' 2> /dev/null || true
 configctl quota flush > /dev/null 2>&1 || true
 configctl quota remove > /dev/null 2>&1 || true
 
-# the hook, the boot's read and the minute's run, then everything else src/ lays down
+# the hook, then everything else src/ lays down
 rm -f /usr/local/etc/inc/plugins.inc.d/quota.inc
-rm -f /usr/local/etc/rc.syshook.d/start/70-quota
-rm -f /usr/local/etc/cron.d/quota
 rm -rf /usr/local/share/os-quota
 rm -f /usr/local/opnsense/service/conf/actions.d/actions_quota.conf
 rm -rf /usr/local/opnsense/scripts/quota
@@ -28,7 +30,9 @@ rm -rf /usr/local/opnsense/mvc/app/models/OPNsense/Quota
 rm -rf /usr/local/opnsense/mvc/app/controllers/OPNsense/Quota
 rm -rf /usr/local/opnsense/mvc/app/views/OPNsense/Quota
 rm -rf /usr/local/opnsense/mvc/app/library/OPNsense/Quota
-# the counts and the last read
+# the counts and the last read - after a read cron started in the minute before it let go of the line has
+# been ended: its scripts are gone, so none starts after this, and none is left to write them again
+/bin/pkill -f '/usr/local/opnsense/scripts/[q]uota/' 2> /dev/null || true
 rm -rf /var/db/os-quota
 service configd restart > /dev/null
 # PHP keeps them in its own temporary directory on 26.7 (/var/lib/php/tmp); /tmp is where they were

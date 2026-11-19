@@ -8,7 +8,8 @@ As os-useridentity's test: the scripts are run with sh from a copy of the reposi
 absolute paths are moved into the temporary root - /usr/local, /var/db/os-quota, PHP's /var/lib/php/tmp,
 the caches in /tmp, /conf/config.xml, /sbin/pfctl, /bin/pkill - and stand-ins answer for what only a
 firewall has: service, configctl, pfctl and pkill, each writing down how it was called (pkill kills
-nothing here). Two things FreeBSD does otherwise are bridged in the copy: BSD's `cp -R dir/` copies what
+nothing here, and writes down what of the plugin was there when it was called: the minute's cron line,
+the boot's hook, the scripts, the state). Two things FreeBSD does otherwise are bridged in the copy: BSD's `cp -R dir/` copies what
 dir holds, written `dir/.` for GNU's cp; BSD's `mktemp -t prefix` takes a prefix, which a stand-in gives
 GNU's mktemp; and install's -o root -g wheel, which a test run by anyone cannot take, is left out by a
 stand-in.
@@ -19,7 +20,8 @@ default, so the table emptied before the alias and the table taken out of pf aft
 after the filter - the table emptied and the alias taken out before the files go, the table taken out of
 pf once its alias is gone and no rule holds it, nothing of the plugin left, nothing done by the old
 package's pre-deinstall in an upgrade, and the boot's hook running one read, or nothing once the plugin is
-gone.
+gone. In a removal, cron's line and the boot's hook go before a read in progress is ended, and a read is
+ended again once the scripts are gone and before the state goes, so none can write it again.
 
     python3 tools/test-install.py"""
 import os
@@ -99,7 +101,10 @@ class Box:
         self.write(self.fake + '/sbin/pfctl', '#!/bin/sh\necho "pfctl $*" >> %s\n'
                    'case "$*" in "-v -s Tables") cat %s 2>/dev/null ;; esac\n' % (log, self.tables), 0o755)
         os.makedirs(self.fake + '/bin')
-        self.write(self.fake + '/bin/pkill', '#!/bin/sh\necho "pkill $*" >> %s\nexit 1\n' % log, 0o755)
+        there = ' '.join('%s=$([ -e %s ] && echo yes || echo no)' % (k, self.fake + v) for k, v in (
+            ('cron', '/usr/local/etc/cron.d/quota'), ('boot', BOOT), ('scripts', '/usr/local/opnsense/scripts/quota/account.py'),
+            ('state', STATE)))
+        self.write(self.fake + '/bin/pkill', '#!/bin/sh\necho "pkill $* %s" >> %s\nexit 1\n' % (there, log), 0o755)
         os.makedirs(self.fake + '/conf')
         self.config(OFF)
 
@@ -256,9 +261,13 @@ with tempfile.TemporaryDirectory() as tmp:
     box.forget()
     rc, out = box.run('install/uninstall.sh')
     calls = box.called()
-    check('uninstall.sh: a read in progress ended, the table emptied and the alias taken out while the hook is there, first',
-          calls[:3], ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/' % box.fake, 'configctl quota flush hook=yes',
-                      'configctl quota remove hook=yes'])
+    check('uninstall.sh: cron\'s line and the boot\'s hook gone first, then a read in progress ended, the table emptied '
+          'and the alias taken out while the hook is there',
+          calls[:3], ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=no boot=no scripts=yes state=yes' % box.fake,
+                      'configctl quota flush hook=yes', 'configctl quota remove hook=yes'])
+    check('uninstall.sh: a read ended again once the scripts are gone, before the state goes - none left to write it again',
+          [c for c in calls if c.startswith('pkill')][1:],
+          ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=no boot=no scripts=no state=yes' % box.fake])
     check('uninstall.sh: nothing of the plugin left - files, state', box.plugin_files(), [])
     check('uninstall.sh: then configd, the filter and cron, without the hook',
           [c for c in calls if c.startswith(('service', 'configctl filter', 'configctl cron'))],
@@ -309,8 +318,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check('pre-deinstall.sh in an upgrade: nothing done', (rc, box.called()), (0, []))
     rc, out = box.run('pkg/pre-deinstall.sh', env={'PKG_UPGRADE': ''})
     check('pre-deinstall.sh in a removal: a read in progress ended, the table emptied, the alias taken out',
-          box.called(), ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/' % box.fake, 'configctl quota flush hook=yes',
-                         'configctl quota remove hook=yes'])
+          box.called(), ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=yes boot=yes scripts=yes state=yes' % box.fake,
+                         'configctl quota flush hook=yes', 'configctl quota remove hook=yes'])
     os.makedirs(box.fake + '/usr/local/opnsense/scripts/quota/__pycache__', exist_ok=True)
     box.write(box.fake + '/usr/local/opnsense/scripts/quota/__pycache__/account.cpython-311.pyc', 'x')
     for path in source_files():
@@ -321,6 +330,8 @@ with tempfile.TemporaryDirectory() as tmp:
     box.forget()
     rc, out = box.run('pkg/post-deinstall.sh')
     check('post-deinstall.sh: nothing of the plugin left - the menu file, Python\'s caches, the state', box.plugin_files(), [])
+    check('post-deinstall.sh: a read cron started before pkg took its line ended, its scripts gone, before the state goes',
+          box.called('pkill'), ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=no boot=no scripts=no state=yes' % box.fake])
     check('post-deinstall.sh: configd, the filter and cron, the table taken out of pf',
           box.called('service') + box.called('configctl') + box.called('pfctl -t'),
           ['service configd restart', 'configctl filter reload skip_alias hook=no', 'configctl cron restart hook=no',

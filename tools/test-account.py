@@ -766,6 +766,34 @@ with tempfile.TemporaryDirectory() as tmp:
         account.WAIT = 50
     check('another read still running: busy, nothing done', (code, out['status']), (0, 'busy'))
 
+    # the plugin removed while a read waits for the lock: uninstall.sh's rm -rf /var/db/os-quota
+    import contextlib
+    import io
+    import shutil
+    import threading
+    gone_dir = os.path.join(tmp, 'os-quota')
+    os.makedirs(gone_dir)
+    gone_lock = os.path.join(gone_dir, 'account.lock')
+    waited = {}
+
+    def waiting():
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            account.main(['account.py'], pf=FakePf('', table=set()), fw=FakeFw(), config=config,
+                         path=os.path.join(gone_dir, 'state.json'), lock=gone_lock)
+        waited['answer'] = json.loads(out.getvalue())
+
+    with open(gone_lock, 'a') as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        reader = threading.Thread(target=waiting)
+        reader.start()
+        time.sleep(0.6)
+        shutil.rmtree(gone_dir)
+    reader.join(10)
+    check('a read that waited for the lock while the removal took /var/db/os-quota away: it ends, nothing written, '
+          'the directory not made again', (waited.get('answer', {}).get('status'), os.path.exists(gone_dir)),
+          ('removed', False))
+
 # --- hosts.py on FreeBSD's own output
 IFCONFIG = '''igb0: flags=1008843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST,LOWER_UP> metric 0 mtu 1500
 \toptions=4e527bb<RXCSUM,TXCSUM>
