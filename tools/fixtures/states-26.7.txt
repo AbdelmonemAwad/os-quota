@@ -1,0 +1,60 @@
+all icmp 192.0.2.10:3194 -> 198.51.100.7:8       0:0
+   age 09:43:14, expires in 00:00:09, 34991:34620 pkts, 1014739:1003980 bytes, rule 102, rlabel fae559338f65e11c53669fc3642c93c2, allow-opts
+   id: 343ffc6a00000000 creatorid: 44128282
+   origif: igb0
+all tcp 127.0.0.1:5140 (192.0.2.1:514) <- 192.0.2.20:40202       ESTABLISHED:ESTABLISHED
+   [3702501927 + 28800] wscale 7  [3264724699 + 65664] wscale 7
+   age 09:43:01, expires in 23:59:23, 587:586 pkts, 30928:30480 bytes, rule 1
+   id: 8142fc6a00000000 creatorid: 44128282
+   origif: igb1
+all udp 192.0.2.1:53 <- 192.0.2.10:63920       MULTIPLE:MULTIPLE
+   age 00:42:36, expires in 00:00:33, 113:113 pkts, 6667:15142 bytes, rule 112, rlabel 8264478f-65d5-49aa-8cf5-3427ce14d0eb
+   id: abe7fe6a00000000 creatorid: 44128282
+   origif: igb1
+all tcp 198.51.100.7:443 <- 192.0.2.10:50123       ESTABLISHED:ESTABLISHED
+   [976229318 + 65536] wscale 7  [486608353 + 64640] wscale 8
+   age 00:22:24, expires in 23:59:56, 2739912:37508 pkts, 4109859292:1501300 bytes, rule 117, rlabel 16070f87-a9eb-46b8-a445-13067df59479
+   id: 2ef2fe6a00000000 creatorid: 44128282
+   origif: igb1
+all tcp 203.0.113.2:61000 (192.0.2.10:50123) -> 198.51.100.7:443       ESTABLISHED:ESTABLISHED
+   [976229318 + 65536] wscale 7  [486608353 + 64640] wscale 8
+   age 00:22:24, expires in 23:59:56, 2739912:37508 pkts, 4109859292:1501300 bytes, rule 108, rlabel 27a06fcfb381bfe16761574956bd6c9f, allow-opts
+   id: 2ff2fe6a00000000 creatorid: 44128282 gateway: 203.0.113.1@igb0
+   origif: igb0
+all tcp 192.0.2.11:80 (203.0.113.2:8080) <- 198.51.100.8:40000       ESTABLISHED:ESTABLISHED
+   [1530500848 + 43136] wscale 7  [321436450 + 65792] wscale 7
+   age 00:01:35, expires in 23:59:59, 300:420 pkts, 25000:600000 bytes, rule 130
+   id: 32fbfe6a00000000 creatorid: 44128282
+   origif: igb0
+all tcp 198.51.100.8:40000 -> 192.0.2.11:80       ESTABLISHED:ESTABLISHED
+   [1530500848 + 43136] wscale 7  [321436450 + 65792] wscale 7
+   age 00:01:35, expires in 23:59:59, 300:420 pkts, 25000:600000 bytes, rule 109, allow-opts
+   id: 33fbfe6a00000000 creatorid: 44128282
+   origif: igb1
+all tcp 2001:db8:ffff::7[443] <- 2001:db8:1::10[50000]       FIN_WAIT_2:FIN_WAIT_2
+   [1827740939 + 46080] wscale 7  [1451504966 + 65792] wscale 7
+   age 00:01:15, expires in 00:00:16, 35:27 pkts, 6102:5765 bytes, rule 103, rlabel fae559338f65e11c53669fc3642c93c2
+   id: 45fbfe6a00000000 creatorid: 44128282
+   origif: igb1
+all tcp 2001:db8:1::10[50000] -> 2001:db8:ffff::7[443]       FIN_WAIT_2:FIN_WAIT_2
+   [1827740939 + 46080] wscale 7  [1451504966 + 65792] wscale 7
+   age 00:01:15, expires in 00:00:16, 35:27 pkts, 6102:5765 bytes, rule 108, rlabel 27a06fcfb381bfe16761574956bd6c9f, allow-opts
+   id: 46fbfe6a00000000 creatorid: 44128282 route-to: 2001:db8:ffff::1@igb0
+   origif: igb0
+all udp 2001:db8:1::10[24591] -> 2001:db8:ffff::53[53]       SINGLE:NO_TRAFFIC
+   age 00:00:59, expires in 00:00:01, 1:0 pkts, 98:0 bytes, rule 108, rlabel 27a06fcfb381bfe16761574956bd6c9f, allow-opts
+   id: 55fbfe6a00000000 creatorid: 44128282 route-to: 2001:db8:ffff::1@igb0
+   origif: igb0
+igb1 tcp 192.0.2.1:22 <- 192.0.2.12:40001       ESTABLISHED:ESTABLISHED
+   [1117830517 + 43136] wscale 7  [1417886607 + 65792] wscale 7
+   age 00:01:02, expires in 00:00:29, 31:23 pkts, 5510:5453 bytes, rule 102, rlabel fae559338f65e11c53669fc3642c93c2, allow-opts
+   id: 4ffbfe6a00000000 creatorid: 44128282
+   origif: igb1
+all gre 192.0.2.10 -> 198.51.100.9       MULTIPLE:MULTIPLE
+   age 00:10:00, expires in 00:00:50, 10:10 pkts, 1000:2000 bytes, rule 108
+   id: 61fbfe6a00000000 creatorid: 44128282
+   origif: igb0
+all udp 203.0.113.2:40442 -> 198.51.100.53:53       MULTIPLE:SINGLE
+   age 00:00:39, expires in 09:45:05, 1:1 pkts, 80:162 bytes, rule 107, rlabel e2ed3df5de92459259897484c29ceff2, allow-opts
+   id: 75fbfe6a00000000 creatorid: 44128282 route-to: 203.0.113.1@igb0
+   origif: igb0
