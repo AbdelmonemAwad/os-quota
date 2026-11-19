@@ -7,16 +7,23 @@ name: checks
 # What a change to this plugin has to survive before it can be merged.
 #
 # Everything here is cheap and deterministic: it parses files and compares them with
-# each other. There is no OPNsense to install on a GitHub runner and no appliance to
-# measure, so this does not pretend to test behaviour - it catches the mistakes that
-# have actually happened while this plugin was being written:
+# each other, and runs the plugin's scripts with stand-ins for what only a firewall has.
+# There is no OPNsense to install on a GitHub runner and no appliance to measure, so this
+# does not pretend to measure behaviour on one - it catches the mistakes that have
+# actually happened while this plugin's family was being written:
 #
 #   * a template that no longer compiles, which takes the whole page to the crash
 #     reporter and tells the reader nothing;
 #   * a shell script or Python file with a syntax error, found after it was installed;
-#   * a string added to the page or to a data file and never translated, which shows
-#     up as one English sentence in the middle of an Arabic page;
+#   * a string added to the page, a form, the model, the menu or the hook and never
+#     translated, which shows up as one English sentence in the middle of an Arabic page;
 #   * an address from the machine this was written on, left in an example.
+#
+# And what this plugin adds: pf's states read as phase 0's lab had them (every address a
+# documentation one), the count and its cycles, the block and the cut through a stand-in
+# pfctl, the firewall hook against each OPNsense's method names, the alias through stand-ins
+# of OPNsense's models, the model's own checks, the page's API and its script, and the
+# install and removal run in a temporary root.
 
 on:
   push:
@@ -28,6 +35,66 @@ permissions:
   contents: read
 
 jobs:
+  signed-releases:
+    name: signed releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # A release is installed only as its owner signed it (SIGNED RELEASES in self-update.py):
+      # what a check takes and refuses, and what an update installs. OpenSSL is the runner's.
+      - name: self-update.py takes a release only as signed
+        run: python3 tools/test-self-update.py
+
+  plugin:
+    name: quotas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # `pfctl -vvs state` as OPNsense 26.7 prints it (tools/fixtures/states-26.7.txt, every
+      # address a documentation one): one connection, one count, by its stack-side ends.
+      - name: pf's states
+        run: python3 tools/test-states.py
+
+      # The count, the minutes of use, the cycles in three time zones, the block and the cut
+      # through a stand-in pfctl, a MAC's addresses, off, a CARP backup, the reset, the command
+      # line and the page's status.
+      - name: The count, the cycles and the block
+        run: python3 tools/test-account.py
+
+      # The block rules, through each OPNsense's own method names.
+      - name: The firewall hook
+        run: python3 tools/test-firewall-hook.py
+
+      # The alias and XGS: Settings' cut list, through stand-ins of OPNsense's models; and
+      # aliases.php's own run.
+      - name: The alias, through stand-ins of OPNsense's Alias model
+        run: php tools/test-aliases.php
+
+      # The page's API: the status, Apply's order on and off, the Reset, the rows.
+      - name: The page's API
+        run: php tools/test-mvc.php
+
+      # The model's own checks: a host one address or one MAC, a limit given, minutes within the
+      # cycle; and the model's XML in step with the scripts.
+      - name: The model's own checks
+        run: php tools/test-model.php
+
+      # The page's script under node: the cards, the quiet lines, the grid's formatters, Reset
+      # and Apply.
+      - name: The page's script
+        run: python3 tools/test-page.py
+
+      # install/install.sh copies src/ whole; install/uninstall.sh names what it removes.
+      - name: Every file the installer lays down is removed by the uninstaller
+        run: sh tools/check-uninstall.sh .
+
+      # The installer, the removal, the package's scripts, place-menu.sh and the boot's hook, run
+      # in a temporary root with stand-ins for service, configctl, pfctl and pkill.
+      - name: Install, removal and menu, in a temporary root
+        run: python3 tools/test-install.py
+
   syntax:
     name: syntax
     runs-on: ubuntu-latest
@@ -48,7 +115,9 @@ jobs:
       - name: PHP
         run: |
           shopt -s globstar nullglob
-          files=(src/**/*.php)
+          # .inc too: plugins.inc.d's hook is PHP that OPNsense includes, and an error in it stops
+          # what includes it; and the tests, which are PHP the checks run.
+          files=(src/**/*.php src/**/*.inc tools/**/*.php)
           [ ${#files[@]} -gt 0 ] || { echo "no PHP here"; exit 0; }
           for f in "${files[@]}"; do php -l "$f"; done
 
@@ -65,7 +134,7 @@ jobs:
       # Well-formed is not enough for one of those files. A comment inside a widget's
       # <translations> element reaches gettext() as a value; two of them reach it as an
       # array, and the TypeError that follows empties every dashboard in the GUI with
-      # nothing in any log naming the file. This plugin was one comment away from it.
+      # nothing in any log naming the file.
       - name: Widget metadata
         run: |
           [ -f tools/check-widget-metadata.py ] || { echo "no widget here"; exit 0; }
@@ -84,11 +153,11 @@ jobs:
       - name: Shell
         run: |
           shopt -s globstar nullglob
-          # install/ is run by the person installing, src/etc/rc.d is run by the system
-          # at boot, pkg/ is run by pkg(8) as root in the middle of an install or a
-          # removal, and tools/ is run on the firewall by whoever is building a package.
-          # Every one of them is a place where a syntax error is found too late.
-          for f in install/*.sh tools/*.sh pkg/*.sh src/etc/rc.d/* src/etc/rc.syshook.d/**/*; do
+          # install/ is run by the person installing, src/etc/rc.syshook.d by the system at
+          # boot, pkg/ is run by pkg(8) as root in the middle of an install or a removal, and
+          # tools/ is run on the firewall by whoever is building a package. Every one of them is
+          # a place where a syntax error is found too late.
+          for f in install/*.sh tools/*.sh pkg/*.sh src/etc/rc.d/* src/etc/rc.syshook.d/**/* src/opnsense/scripts/**/*.sh; do
             [ -f "$f" ] || continue
             head -n1 "$f" | grep -q '^#!' || continue
             sh -n "$f" && echo "ok $f"
@@ -117,16 +186,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Text that lives in a data file reaches the page through a generated map. A note
-      # added to a JSON file and not regenerated here comes out in English on an Arabic
-      # page, and nothing in the build says so. That is the bug this step exists for; it
-      # has happened.
-      - name: The generated data-string map is current
-        run: |
-          [ -f tools/gen-data-strings.py ] || { echo "not this plugin"; exit 0; }
-          python3 tools/gen-data-strings.py --check
-
-      - name: Every string the page asks for is in the catalogue
+      # The page's lang._(), the forms' labels, help and hints, the model's messages and options, the
+      # menu, the ACL and the PHP's gettext(): each string OPNsense passes through gettext is in
+      # source.json, and has its Arabic in opnsense-arabic.
+      - name: Every string the GUI shows is in the catalogue
+        # A contributor's pull request (from a fork) and main may carry a string whose Arabic follows
+        # later (CONTRIBUTING.md): a warning there; on a branch of this repository a failure, as before.
+        env:
+          ARABIC_LATER: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && '1' || '' }}
         run: |
           [ -f tools/check-strings.py ] || { echo "not this plugin"; exit 0; }
           python3 tools/check-strings.py
