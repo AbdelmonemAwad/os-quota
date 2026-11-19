@@ -14,7 +14,7 @@
  "Cycle",
  "Daily, from 00:00",
  "Description",
- "Each host is counted from pf's states once a minute: every byte of its connections, to and from the firewall itself too, and what the coprocessor forwards where os-xgs-npu gives pf its counts. A host can go past its limit by what it moves in up to a minute before it is blocked. Over its quota, it reaches DNS and this page on the firewall and nothing else, until its cycle starts again or its count is reset here.",
+ "Each host is counted from pf's states once a minute: every byte of its connections, to and from the firewall itself too, and what the coprocessor forwards where os-xgs-npu gives pf its counts. A host goes past its limit by what it moves before it is blocked and its open connections are cut: not measured yet - up to about a minute of its traffic, about two minutes where XGS: Settings cuts them. Over its quota it is blocked until its cycle starts again or its count is reset here; DNS and the web GUI on the firewall stay as the anti-lockout rule and the owner's own rules make them, and what a port forward with a Pass filter rule lets in is not blocked.",
  "Edit quota",
  "Enable",
  "Enabled",

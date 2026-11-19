@@ -264,6 +264,13 @@ ids = (set(re.findall(r'\bid="([\w-]+)"', MARKUP)) | set(re.findall(r"'apply_btn
 asked = set(re.findall(r"\$\('#([\w-]+)'\)", SCRIPT))
 check('every element the script looks for by id is on the page, or base_form\'s',
       sorted(asked - ids), [])
+# what the page says of the overshoot and the block is what README says: not measured yet (settled point 4
+# wants it as measured), longer where XGS: Settings cuts; DNS and the GUI left to the owner's rules
+note = re.search(r"lang\._\('(Each host is counted(?:[^'\\]|\\.)*)'\)", MARKUP).group(1)
+check('the note under the grid: the overshoot not measured yet, about two minutes where XGS: Settings cuts, DNS and the '
+      'GUI left to the anti-lockout and the owner\'s rules, a Pass port forward outside the block',
+      [part in note for part in ('not measured yet', 'about two minutes where XGS: Settings cuts them',
+                                 'stay as the anti-lockout rule and the owner', 'Pass filter rule')], [True] * 4)
 
 print('%d of %d checks failed' % (failures, checks) if failures else '%d checks passed' % checks)
 sys.exit(1 if failures else 0)
