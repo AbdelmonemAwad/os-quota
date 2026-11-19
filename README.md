@@ -48,8 +48,10 @@ Time and volume quotas per host - per user and group with os-useridentity is the
 - **the block** - a host over a quota goes into the pf table `quota_over`, an alias of type External in
   Firewall: Aliases that the plugin makes, and rules the plugin registers - never among the owner's in
   Firewall: Rules - block, on every interface and before the owner's rules, everything it sends past the
-  firewall, everything it sends to the firewall itself but DNS and the web GUI, and every new connection
-  to it. DNS and the web GUI are left out of the block, not let through: OPNsense's anti-lockout rule and
+  firewall, every new connection to it, and what it sends to the firewall itself but DNS and the web GUI:
+  every other TCP and UDP port, ICMP, and the tunnels' own protocols - IP in IP, IPv6 in IP, GRE, ESP and
+  AH (another protocol addressed to the firewall, a routing protocol's, stays the owner's rules' to
+  decide). DNS and the web GUI are left out of the block, not let through: OPNsense's anti-lockout rule and
   the owner's own rules decide them as they did before the host went over, so a quota locks nobody out -
   the owner on his own PC among them - and lets nobody in where the owner's rules keep a network away
   from the firewall. Every rule is a block. The host keeps its address: OPNsense's own DHCP and IPv6
