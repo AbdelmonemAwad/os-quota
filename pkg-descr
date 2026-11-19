@@ -1,0 +1,17 @@
+Quotas gives each host named a quota by volume, by minutes of use, or
+both, on a daily, weekly or monthly cycle. A host is one IPv4 or IPv6
+address, or a MAC whose addresses are taken from the firewall's host
+discovery. Each is counted once a minute from pf's states - every byte
+of its connections, those the coprocessor forwards included where
+os-xgs-npu gives pf their counts - and a host over its quota is put in
+a pf table that rules of the plugin's block, leaving it DNS and the web
+GUI on the firewall, until its cycle starts again. Where os-xgs-npu is
+installed its open connections are cut by XGS: Settings' cut list;
+without it, at once by the plugin. Off by default.
+
+Plugin Changelog
+================
+
+1.0.0
+
+* Initial release
