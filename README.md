@@ -79,8 +79,11 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   hands its connections back to the host through os-xgs-npu's `hwdrop` (`release_addresses`), as
   os-blocklists does for the addresses a list lost, and pf decides their frames again: a sender that kept
   sending all along gets through again. The step has the same 5 s; one left at its deadline or failed is
-  tried again at the next read, unless the host is back in the table by then. An os-xgs-npu older than
-  `release_addresses` (2026-11-17) hands nothing back;
+  tried again at the next read, unless the host is back in the table by then. At the plugin's removal no
+  read follows: everything the table holds and everything kept is handed back there and then, in one step,
+  and if that step is late or fails the system log names the addresses and says that their connections
+  stay dropped on the coprocessor until their senders stop - XGS: Offloaded Flows' Return to host, or a
+  reboot, frees them. An os-xgs-npu older than `release_addresses` (2026-11-17) hands nothing back;
 - **a new cycle** - the count starts again from nothing and the host passes again; **Reset** on a
   quota's row does the same by hand, now. A boot in the middle of a cycle loses no count: the counts are
   kept in `/var/db/os-quota`, and a read at the end of the boot fills the table again;
@@ -185,7 +188,7 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   states, bytes up from the end that made it, the ids with a gateway or route-to beside them, only the
   watched hosts' states read past their first line, the same answer with and without the quick look
   through, what a cut kills, and 100,000 states read;
-- **the count, the cycles and the block** - `tools/test-account.py`, 162 checks with a stand-in pfctl and
+- **the count, the cycles and the block** - `tools/test-account.py`, 172 checks with a stand-in pfctl and
   firewall: the settings from a `config.xml` - the minute threshold left empty among them - the hosts
   taken and refused, the cycles in UTC and around the clock changes of Europe/Berlin, America/New_York and
   America/Santiago (which changes at midnight), what a connection gained, a connection begun since, one
@@ -201,7 +204,9 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   stuck in the driver; the hand-back of an address the table loses - a Reset, a new cycle, a quota removed
   or given another host, a MAC's address changed, the plugin off, `--flush` - and not of one it keeps, the
   read going on when `hwdrop.py` is missing, older than `release_addresses`, raising or late, and what it
-  could not hand back tried at the next read - the firewall's own address never blocked, a MAC's addresses
+  could not hand back tried at the next read, and at the removal (`--leave`) all of it in one step,
+  nothing kept, and a step that raises or is late said as it is - the connections dropped until their
+  senders stop, and what frees them - the firewall's own address never blocked, a MAC's addresses
   changing, the alias missing or not the plugin's, the owner's alias of that name never emptied, pfctl
   refusing, off, a CARP backup, the reset, the command line and its lock, a read waiting for the lock
   while the removal takes its directory, the page's status;
@@ -225,11 +230,13 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   XGS: Settings' cut list or not yet put there, and what each says - the grid's formatters, Reset asking
   first, Apply from each tab, the markup and the script in step, and the note under the grid on the
   overshoot and the block;
-- **the installation** - `tools/test-install.py`, 33 checks, the installer, the removal, the package's
-  scripts, `place-menu.sh` and the boot's hook in a temporary root: every file laid down with its mode
-  and taken away, the menu at XGS 62 or under Firewall, nothing copied with a syntax error, the table
-  taken out of pf, nothing done by the old package in an upgrade, cron's line and the boot's hook gone
-  before a read in progress is ended, and a read ended again before the state goes;
+- **the installation** - `tools/test-install.py`, 34 checks, the installer, the removal, the package's
+  scripts, `place-menu.sh` and the boot's hook in a temporary root: every file laid down with its mode and
+  taken away, the menu at XGS 62 or under Firewall, nothing copied with a syntax error, the table taken
+  out of pf, nothing done by the old package in an upgrade, cron's line and the boot's hook gone before a
+  read in progress is ended, the removal's `configctl quota leave` before the alias goes, a read ended
+  again before the state goes, and every configd action the scripts and the page's API ask for in the
+  plugin's actions file;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
 - **the strings** - `tools/check-strings.py`: each of the 84 strings the GUI shows is in `source.json`;
   23 have their Arabic in opnsense-arabic already, the other 61 wait for it there;
@@ -257,9 +264,10 @@ Settings and quotas are given. Safe to run again: the settings in config.xml and
 package is needed beside it: pfctl, Python and PHP are OPNsense's own. On an XGS 3300, short connections
 in hardware are counted with os-xgs-npu from its pull request #1191 on.
 
-`sh install/uninstall.sh` empties the table, takes `quota_over` out of Firewall: Aliases and XGS:
-Settings' cut list (switched off instead where a rule or a setting still names it), removes its files and
-its counts, and takes the table out of pf. The settings stay in config.xml.
+`sh install/uninstall.sh` empties the table, hands back from hardware what the coprocessor dropped for it,
+takes `quota_over` out of Firewall: Aliases and XGS: Settings' cut list (switched off instead where a rule
+or a setting still names it), removes its files and its counts, and takes the table out of pf. The
+settings stay in config.xml.
 
 **From a package**, once there is a release: `tools/make-package.sh` builds it on a firewall, and
 `release.yml` in a FreeBSD virtual machine for each release, as os-blocklists does.
