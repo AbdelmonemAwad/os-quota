@@ -14,12 +14,13 @@
  * name that is not the plugin's is the owner's, and is never touched: nothing is blocked then, and the
  * page says so.
  *
- * Where os-xgs-npu is installed its cut list holds the alias (settled point 6): a host that goes over its
- * quota has its open connections cut at lists_cut.py's next minute, in hardware first where "Cut in
- * hardware" is on - and by the plugin's own run where lists_cut.py would not take the address as new
- * (scripts/quota/account.py, cut_here()). It is put there once and recorded in the plugin's settings
- * (general.cut_added), as os-useridentity records its own: one the owner takes out of XGS: Settings stays
- * out - lists_cut.py would take every address the table holds as new, and cut it.
+ * Where os-xgs-npu is installed its cut list holds the alias too (settled point 6). A host that goes over
+ * its quota has its open connections cut by the plugin's own read that blocks it, at once, in hardware
+ * first where "Cut in hardware" is on (scripts/quota/account.py, cut_here()); lists_cut.py's next minute
+ * then finds nothing left, or what came in between. It is put there once and recorded in the plugin's
+ * settings (general.cut_added), as os-useridentity records its own: one the owner takes out of XGS:
+ * Settings stays out - lists_cut.py would take every address the table holds as new, and cut it - and the
+ * plugin's read then cuts nothing either.
  */
 
 namespace OPNsense\Quota;

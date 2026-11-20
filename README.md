@@ -61,19 +61,18 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   the owner on his own PC among them - and lets nobody in where the owner's rules keep a network away
   from the firewall. Every rule is a block. The host keeps its address: OPNsense's own DHCP and IPv6
   neighbour rules come first;
-- **the cut** - a block stops new connections only. Where os-xgs-npu is installed, `quota_over` is put
-  in XGS: Settings' "Cut open connections when listed": its next minute cuts the connections the host
-  already has open, in hardware first where "Cut in hardware" is on. It is put there once, and the
-  plugin keeps a record of it: one the owner takes out stays out, and the page says the host then keeps
-  what it has open. Without os-xgs-npu the plugin cuts them itself, at once, by each state's id, as
-  OPNsense's own Sessions page does - and with it too wherever os-xgs-npu's `lists_cut.py` would not:
-  it cuts only an address that its own record of the table's last run does not hold, so the plugin reads
-  that record (`/var/db/os-xgs-npu/lists/quota_over.json`) and cuts a host it already holds - put back
-  in the table after a boot, after the plugin was turned off and on, after a Reset and a second overrun
-  within that minute - and every host while `quota_over` was never put in the list (os-xgs-npu installed
-  since the last Apply; the page says so). The first read after a pause - the plugin on again, a CARP
-  backup become master - cuts every blocked host's connections: what it opened while nothing blocked it,
-  or what pfsync brought from the other firewall, is open still;
+- **the cut** - a block stops new connections only, so the read that blocks a host cuts the connections it
+  already has open, there and then: on the coprocessor first where os-xgs-npu is installed - its `hwdrop`
+  drops them there, both ways, with XGS: Settings' "Cut in hardware" on, and is given 5 s before the rest
+  goes on without it - then every pf state of the host, killed by its id, as OPNsense's own Sessions page
+  does. Where os-xgs-npu is installed, `quota_over` is also put in XGS: Settings' "Cut open connections
+  when listed", whose next minute finds nothing of the host's left to cut. It is put there once, and the
+  plugin keeps a record of it: one the owner takes out stays out, the plugin then cuts nothing either -
+  his choice - and the page says the host keeps what it has open. While `quota_over` is not in the list
+  yet (os-xgs-npu installed since the last Apply), the plugin cuts all the same, and the page says so. The
+  first read after a pause - the plugin on again, a CARP backup become master - cuts every blocked host's
+  connections: what it opened while nothing blocked it, or what pfsync brought from the other firewall, is
+  open still;
 - **a new cycle** - the count starts again from nothing and the host passes again; **Reset** on a
   quota's row does the same by hand, now. A boot in the middle of a cycle loses no count: the counts are
   kept in `/var/db/os-quota`, and a read at the end of the boot fills the table again;
@@ -131,9 +130,14 @@ empty, and an owner's own value stays his.
 ## What it does not do
 
 - **no exact stop at the limit** - a host can go past its volume by what it moves until the next read,
-  up to a minute, plus the few seconds the coprocessor's counts take to reach pf; with os-xgs-npu's cut,
-  its open connections run up to another minute. At hardware rates that is gigabytes. **Not measured
-  yet** on either appliance;
+  up to a minute, plus the few seconds the coprocessor's counts take to reach pf: that read blocks it
+  and cuts its open connections. At hardware rates that is gigabytes. **Not measured yet** on either
+  appliance;
+- **no hand-back from hardware** - with "Cut in hardware" on, a connection the coprocessor dropped for a
+  host over its quota stays dropped there while its sender goes on sending it, as os-xgs-npu's `hwdrop`
+  leaves it - after the host passes again too: a new cycle or a Reset lets its new connections through,
+  not one that kept sending all along. os-blocklists hands such connections back for the addresses a
+  list lost; this plugin does not yet;
 - **not the ISP's count** - pf counts IP bytes, headers included, not Ethernet frames, and a quota counts
   to and from the firewall itself too;
 - **no host behind a router by its MAC** - the firewall sees the router's: name such a host by its
@@ -178,20 +182,23 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   states, bytes up from the end that made it, the ids with a gateway or route-to beside them, only the
   watched hosts' states read past their first line, the same answer with and without the quick look
   through, what a cut kills, and 100,000 states read;
-- **the count, the cycles and the block** - `tools/test-account.py`, 109 checks with a stand-in pfctl and
+- **the count, the cycles and the block** - `tools/test-account.py`, 142 checks with a stand-in pfctl and
   firewall: the settings from a `config.xml` - the minute threshold left empty among them - the hosts
   taken and refused, the cycles in UTC and around the clock changes of Europe/Berlin, America/New_York
   and America/Santiago (which changes at midnight), what a connection gained, a connection begun since,
   one older, a tuple reused, a state ending first, a restart from the saved state, a second quota on one
   host, the minutes of use and their threshold, the cycle turning, a clock set back, a clock a day ahead
   and back, a real-time clock at 2001 after a boot, the table filled, emptied and filled again, the cut
-  here without os-xgs-npu and, with a stand-in of its `lists_cut.py` keeping its record on disk, here
-  only where that would not cut - a boot, the plugin off and on, a CARP master's return, a Reset and a
-  second overrun, quota_over never listed or taken out by the owner, a record it cannot read - the
-  firewall's own address never blocked, a MAC's addresses changing, the alias missing or not the
-  plugin's, the owner's alias of that name never emptied, pfctl refusing, off, a CARP backup, the reset,
-  the command line and its lock, a read waiting for the lock while the removal takes its directory, the
-  page's status;
+  by the read that blocks, with os-xgs-npu or without it - a boot, the plugin off and on, a CARP master's
+  return, a Reset and a second overrun, quota_over not yet listed - and a stand-in of its `lists_cut.py`,
+  keeping its record on disk, finding nothing left after it; nothing cut where the owner took quota_over
+  out of the list; the cut in hardware first through a stand-in of os-xgs-npu's `hwdrop.py` - called
+  once, before the first pf state is killed, with the host's addresses alone, its count in the answer and
+  the log, and the pf cut going on without it when it is missing, does not load, raises, pages past its
+  deadline or is stuck in the driver - the firewall's own address never blocked, a MAC's addresses
+  changing, the alias missing or not the plugin's, the owner's alias of that name never emptied, pfctl
+  refusing, off, a CARP backup, the reset, the command line and its lock, a read waiting for the lock
+  while the removal takes its directory, the page's status;
 - **the firewall hook** - `tools/test-firewall-hook.py`, 39 checks, os-xgs-npu's harness: the rules
   through each OPNsense's own method names (26.7, 26.7.3 to 26.7.8, 27.1), nothing but blocks, and what
   they do to a probe each way by pf's first quick match - DNS and the web GUI on the firewall left to the
@@ -207,10 +214,11 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   default written, empty being the scripts' own value;
 - **the page's API** - `tools/test-mvc.php`, 19 checks: the status, Apply's order on and off, the Reset
   and its id, the rows;
-- **the page's script** - `tools/test-page.py`, 26 checks, under node with a stand-in jQuery: the cards,
-  the quiet lines - XGS: Settings' cut in hardware first or not, quota_over taken out of its cut list or
-  never put there - the grid's formatters, Reset asking first, Apply from each tab, the markup and the
-  script in step, and the note under the grid on the overshoot and the block;
+- **the page's script** - `tools/test-page.py`, 27 checks, under node with a stand-in jQuery: the cards,
+  the quiet lines - the cut at the read that blocks, in hardware first or not, quota_over taken out of
+  XGS: Settings' cut list or not yet put there, and what each says - the grid's formatters, Reset asking
+  first, Apply from each tab, the markup and the script in step, and the note under the grid on the
+  overshoot and the block;
 - **the installation** - `tools/test-install.py`, 33 checks, the installer, the removal, the package's
   scripts, `place-menu.sh` and the boot's hook in a temporary root: every file laid down with its mode
   and taken away, the menu at XGS 62 or under Firewall, nothing copied with a syntax error, the table
@@ -218,7 +226,7 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   before a read in progress is ended, and a read ended again before the state goes;
 - **the self-update** - `tools/test-self-update.py`, 45 checks, as os-blocklists has it;
 - **the strings** - `tools/check-strings.py`: each of the 84 strings the GUI shows is in `source.json`;
-  21 have their Arabic in opnsense-arabic already, the other 63 wait for it there;
+  23 have their Arabic in opnsense-arabic already, the other 61 wait for it there;
 - **the rest** - every installed file removed by the uninstaller (`tools/check-uninstall.sh`), `php -l`,
   `py_compile` and pyflakes, `sh -n`, XML and JSON, nothing private, no Arabic in the code, the copyright
   line; and, by hand, the page kit (kit).
@@ -260,7 +268,7 @@ forward, by the `install/install.sh` it carries. No cron entry runs it.
 
 ## Where it fits
 
-It is one part of the [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu) project, which puts OPNsense on Sophos XGS hardware, and works the way its other plugins do: changes by pull request, a release installed from **XGS: Updates**, its Arabic in [opnsense-arabic](https://github.com/AbdelmonemAwad/opnsense-arabic)'s catalogue. It installs the same on a plain OPNsense, where pf alone carries the traffic and the plugin cuts a blocked host's connections itself.
+It is one part of the [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu) project, which puts OPNsense on Sophos XGS hardware, and works the way its other plugins do: changes by pull request, a release installed from **XGS: Updates**, its Arabic in [opnsense-arabic](https://github.com/AbdelmonemAwad/opnsense-arabic)'s catalogue. It installs the same on a plain OPNsense, where pf alone carries the traffic and a blocked host's connections are cut in pf alone.
 
 ## Licence
 

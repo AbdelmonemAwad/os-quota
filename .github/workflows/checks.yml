@@ -58,8 +58,9 @@ jobs:
         run: python3 tools/test-states.py
 
       # The count, the minutes of use, the cycles in three time zones, the block and the cut
-      # through a stand-in pfctl, a MAC's addresses, off, a CARP backup, the reset, the command
-      # line and the page's status.
+      # through a stand-in pfctl - in hardware first through a stand-in of os-xgs-npu's
+      # hwdrop.py - a MAC's addresses, off, a CARP backup, the reset, the command line and the
+      # page's status.
       - name: The count, the cycles and the block
         run: python3 tools/test-account.py
 

@@ -9,8 +9,8 @@
  * External alias while Quotas is on, none of this plugin's while it is off. Where os-xgs-npu is
  * installed, its cut list - XGS: Settings, "Cut open connections when listed" - then holds it, beside
  * the owner's own entries, which stay as they are (settled point 6): put there once and recorded in the
- * plugin's settings (general.cut_added), so taken out by the owner it stays out. Without os-xgs-npu the
- * plugin's own run cuts the connections of a host that goes over its quota.
+ * plugin's settings (general.cut_added), so taken out by the owner it stays out. The plugin's own read
+ * cuts the connections of a host that goes over its quota, with os-xgs-npu or without it (account.py).
  *
  * Nothing is saved unless the models take every change; the configuration is saved once.
  *
