@@ -19,9 +19,9 @@ Each read:
      threshold Settings gives, both ways together - PROVISIONAL default, see settings.MINUTE_KB;
   5. a quota whose cycle has turned starts again from nothing: its host passes again;
   6. the addresses of every host over a quota put in the table, the others taken out (enforce.py), and
-     the connections such a host has open cut: by XGS: Settings' cut list where os-xgs-npu is installed
-     (settled point 6), here at once without it - and here too whenever os-xgs-npu's lists_cut.py would
-     not take the address as newly listed (cut_here()).
+     the connections such a host has open cut by this read, at once (settled point 6): on the coprocessor
+     first where os-xgs-npu is installed, then their pf states - with os-xgs-npu or without it, but not
+     where the owner took quota_over out of XGS: Settings' cut list (cut_here()).
 
 Everything is kept in /var/db/os-quota/state.json after each read - the counts of the cycle, the last
 read's per-connection counts - so a restart or a boot in the middle of a cycle loses no count and counts
@@ -43,7 +43,6 @@ in the page's Last error and in the system log.
 """
 
 import fcntl
-import ipaddress
 import json
 import os
 import re
@@ -65,10 +64,7 @@ except ImportError:                     # not on every system the tests run on
 STATE_DIR = '/var/db/os-quota'
 STATE = STATE_DIR + '/state.json'
 LOCK = STATE_DIR + '/account.lock'
-PROJECT = '/usr/local/opnsense/scripts/xgs'
-# os-xgs-npu's lists_cut.py keeps, for each table it watches, what the table held at its last run - one
-# file a table, by its name (its snapshot_path()) - and cuts only the addresses that file does not hold
-LISTS_RECORD = '/var/db/os-xgs-npu/lists/' + settings.ALIAS + '.json'
+PROJECT = '/usr/local/opnsense/scripts/xgs'      # os-xgs-npu's scripts, its hwdrop.py among them
 SLACK = 2               # seconds: pf prints a state's age in whole seconds
 NEAR = 0.8              # the page's "near the limit": 80 % of a quota, as os-netreport's cap
 WAIT = 50               # seconds a read waits for another one to end
@@ -106,10 +102,11 @@ def save(state, path=STATE):
 
 class Firewall:
     """What a read asks of the firewall beside pf: its interfaces, its neighbours, whether os-xgs-npu is
-    there. Stand-ins replace it in the tests."""
+    there, and where its hwdrop.py is. Stand-ins replace it in the tests."""
 
     def __init__(self, project=PROJECT):
         self.project = os.path.isdir(project)
+        self.hwdrop = os.path.join(project, 'hwdrop.py')
 
     def interfaces(self):
         return hosts.interfaces()
@@ -259,38 +256,35 @@ def note_error(state, message, now):
     state['error'] = {'at': int(now), 'message': message, 'logged': logged}
 
 
-def cut_here(fresh, conf, alias, project, record=None):
+def cut_here(fresh, conf, alias, project):
     """Which of `fresh` - addresses the table has just gained, or holds on the first read after a pause -
-    this read cuts itself.
+    this read cuts: every one, at once, with os-xgs-npu or without it (settled point 6) - on the
+    coprocessor first where it is installed (enforce.drop_in_hardware()).
 
-    Without os-xgs-npu, all of them: nothing else would. With it, XGS: Settings' cut list does (settled
-    point 6): lists_cut.py drops the coprocessor's flows first, then kills the states, at its next minute.
-    But it cuts only what is new to it - an address its own record of the table's last run does not hold -
-    so an address that was in the table then it never cuts: one put back after a boot (the record outlives
-    it), after the plugin was turned off and on, on a CARP master come back, or after a Reset and a second
-    overrun within its minute. Those are cut here, as is everything while the alias was never put in its
-    list (os-xgs-npu installed since the last Apply). Where the owner took it out of the list, nothing is
-    cut: his choice stands, and the page says so. A record that cannot be read leaves the cut here too: a
-    connection cut twice costs nothing, one never cut costs the quota."""
+    With os-xgs-npu, XGS: Settings' cut list holds quota_over too, and lists_cut.py cuts what it takes as
+    new at its next minute: by then nothing, or what came in between - a connection cut twice costs
+    nothing. Until 2026-11-20 this read left the cut to it wherever it would take the address as new, and
+    that minute was the cost: in the lab the cut came 60 s after the block, and the second XGS 3300 at
+    3 Gbit/s let 31.5 GB pass after the limit, the XGS 136 9.5 GB.
+
+    Where the owner took quota_over out of the list after the plugin put it there - its uuid in the
+    plugin's record of it (cut_added), not in the list - nothing is cut: his choice stands, and the page
+    says so."""
     fresh = set(fresh)
-    if not project or not fresh:
-        return fresh
-    if alias['uuid'] not in conf['cut_lists']:
-        return set() if alias['uuid'] in conf['cut_added'] else fresh
-    try:
-        with open(record or LISTS_RECORD, encoding='utf-8') as handle:
-            seen = json.load(handle)
-    except (OSError, ValueError):
-        return fresh
-    if not isinstance(seen, list):
-        return fresh
-    held = set()
-    for item in seen:
-        try:
-            held.add(ipaddress.ip_network(item, strict=False))
-        except (TypeError, ValueError):
-            continue
-    return {a for a in fresh if ipaddress.ip_network(a) in held}
+    if project and fresh and alias['uuid'] not in conf['cut_lists'] and alias['uuid'] in conf['cut_added']:
+        return set()
+    return fresh
+
+
+def cut_said(cut, hosts, dropped):
+    """The system log's line for a cut: how many connections of how many addresses, and how many the
+    coprocessor dropped first where os-xgs-npu's hwdrop was asked (dropped None: it was not)."""
+    line = '%d open connection(s) of %d host address(es) over their quota cut' % (cut, hosts)
+    if dropped == enforce.UNKNOWN:
+        return line + ', how many were dropped in hardware first is not known'
+    if dropped is not None:
+        return line + ', %d dropped in hardware first' % dropped
+    return line
 
 
 def tick(state, conf, alias, pf, fw, now):
@@ -416,11 +410,17 @@ def tick(state, conf, alias, pf, fw, now):
         # what the table gained; and on the first read after a pause - the plugin on again, this firewall
         # master again - every host in it: what it opened while nothing here blocked it, or what pfsync
         # brought from the other firewall, is open still
-        to_cut = cut_here(set(added) | (over if resumed else set()), conf, alias, fw.project)
+        to_cut = sorted(cut_here(set(added) | (over if resumed else set()), conf, alias, fw.project))
         if to_cut:
-            answer['cut'] = enforce.cut(pf, sorted(to_cut))
-            if answer['cut']:
-                log('%d open connection(s) of %d host address(es) over their quota cut' % (answer['cut'], len(to_cut)))
+            # on the coprocessor first where os-xgs-npu is installed - at once and both ways, with "Cut in
+            # hardware" on - then every pf state with an end among them; how many it dropped, 'unknown'
+            # when its step was left at its deadline or failed, is in the answer as 'dropped'
+            dropped = enforce.drop_in_hardware(to_cut, fw.hwdrop, log) if fw.project else None
+            answer['cut'] = enforce.cut(pf, to_cut)
+            if dropped is not None:
+                answer['dropped'] = dropped
+            if answer['cut'] or dropped:
+                log(cut_said(answer['cut'], len(to_cut), dropped))
         state['blocking'] = True
         if len(pf.errors) > known:
             note_error(state, '; '.join(pf.errors[known:]), now)

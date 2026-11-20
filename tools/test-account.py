@@ -18,8 +18,16 @@ What is checked:
   - the minutes of use: the threshold, two reads in a minute, 0 for any byte;
   - the cycle turning: the counts from nothing, the host passing again; a clock set back not starting one;
   - the block: an address over its quota put in the table and taken out, never the firewall's own; a MAC's
-    addresses - link-local and the firewall's left out; the cut done here without os-xgs-npu, left to
-    XGS: Settings with it; the alias missing, not the plugin's or switched off: no table written;
+    addresses - link-local and the firewall's left out; the alias missing, not the plugin's or switched
+    off: no table written;
+  - the cut, by the read that blocks, with os-xgs-npu or without it - a boot, the plugin off and on, a
+    CARP master's return, a Reset and a second overrun, quota_over not yet in XGS: Settings' cut list - and
+    a stand-in of os-xgs-npu's lists_cut.py finding nothing left after it; nothing cut where the owner took
+    quota_over out of that list;
+  - the cut in hardware first, through a stand-in of os-xgs-npu's hwdrop.py: called once, before the first
+    pf state is killed, with the host's addresses alone; its count in the answer and the system log; the
+    pf cut going on without it - hwdrop.py missing or not loading, raising, past its deadline or stuck in
+    the driver - and nothing asked of it without os-xgs-npu; within() itself;
   - off, a CARP backup, the interfaces unreadable: nothing counted, and off the table emptied;
   - a reset by hand; the command line - one read, --flush, --gone, --reset - its lock, its answer when a
     read stops; and the page's status.
@@ -29,9 +37,12 @@ import calendar
 import ipaddress
 import json
 import os
+import signal
 import sys
 import tempfile
+import threading
 import time
+import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'src', 'opnsense', 'scripts', 'quota'))
@@ -68,15 +79,32 @@ LOGGED = []
 MB = 1000 * 1000
 
 
-class FakePf(enforce.Pf):
-    """pfctl: its states' text, the table quota_over (None: no such table), the states killed."""
+def forget(text, ident):
+    """pf's states' text without the state of this id/creatorid: what is left once it is killed."""
+    mark = 'id: %s creatorid: %s' % tuple(ident.split('/'))
+    blocks = []
+    for line in text.splitlines():
+        if line and not line[0].isspace():
+            blocks.append([line])
+        elif blocks:
+            blocks[-1].append(line)
+    kept = [block for block in blocks if not any(mark in rest for rest in block[1:])]
+    return ''.join(line + '\n' for block in kept for line in block)
 
-    def __init__(self, text='', table=None, fail=()):
+
+class FakePf(enforce.Pf):
+    """pfctl: its states' text, the table quota_over (None: no such table), the states killed - also in
+    events, when given, beside what else happens there. vanish: a state killed leaves the text, as pf
+    forgets it."""
+
+    def __init__(self, text='', table=None, fail=(), events=None, vanish=False):
         self.text = text
         self.table = set(table) if table is not None else None
         self.killed = []
         self.calls = []
         self.fail = set(fail)
+        self.events = events
+        self.vanish = vanish
         super().__init__(run=self.fake)
 
     def fake(self, args):
@@ -100,16 +128,24 @@ class FakePf(enforce.Pf):
             return 0, ''
         if args[:2] == ['-k', 'id']:
             self.killed.append(args[3])
+            if self.events is not None:
+                self.events.append(('kill', args[3]))
+            if self.vanish:
+                self.text = forget(self.text, args[3])
             return 0, ''
         if args == ['-v', '-s', 'Tables']:
             return 0, ('-pa----\tquota_over\n' if self.table is not None else '') + '-pa-r--\tbogons\n'
         return 1, 'pfctl: not this'
 
 
+ABSENT = os.path.join(ROOT, 'tools', 'no-such-folder', 'hwdrop.py')     # an os-xgs-npu with no hwdrop.py
+
+
 class FakeFw:
     def __init__(self, own=('192.0.2.1', '203.0.113.2', '2001:db8:1::1'), role=None, error=None, table=None,
-                 project=False):
+                 project=False, hwdrop=ABSENT):
         self.own, self.role, self.error, self.table, self.project = set(own), role, error, table or {}, project
+        self.hwdrop = hwdrop
         self.asked = 0
 
     def interfaces(self):
@@ -369,17 +405,16 @@ pf.table = set()
 account.tick(state, conf(qv), OURS, pf, fw, t0 + 180)
 check('the table emptied by hand (or a boot): filled again at the next read, and cut again', (pf.table, len(pf.killed)),
       ({'192.0.2.10'}, 3))
-# with os-xgs-npu, quota_over in its cut list and new to lists_cut.py's record of the table
+# with os-xgs-npu, quota_over in its cut list: cut here all the same, by the read that blocks
 LISTED = {'cut_lists': ['o1', OURS['uuid']], 'cut_added': [OURS['uuid']]}
 records = tempfile.TemporaryDirectory()
-account.LISTS_RECORD = os.path.join(records.name, 'quota_over.json')
-with open(account.LISTS_RECORD, 'w', encoding='utf-8') as handle:
-    json.dump(['198.51.100.200/32'], handle)
+RECORD = os.path.join(records.name, 'quota_over.json')         # os-xgs-npu's lists_cut.py's, below
 state2 = json.loads(json.dumps(state))
 pf2 = FakePf(pf.text, table=set())
-account.tick(state2, conf(qv, **LISTED), OURS, pf2, FakeFw(project=True), t0 + 240)
-check('with os-xgs-npu: in the table, nothing cut here - XGS: Settings\' cut list does it', (pf2.table, pf2.killed),
-      ({'192.0.2.10'}, []))
+answer = account.tick(state2, conf(qv, **LISTED), OURS, pf2, FakeFw(project=True), t0 + 240)
+check('with os-xgs-npu and quota_over in XGS: Settings\' cut list: in the table, and its connections cut here, by the '
+      'read that blocks it - not left to that list\'s next minute', (pf2.table, sorted(pf2.killed), answer.get('cut')),
+      ({'192.0.2.10'}, ['0001/44128282', '0002/44128282', '0101/44128282'], 3))
 # a new cycle
 LOGGED.clear()
 tomorrow = utc(2026, 11, 21, 0, 0, 30)
@@ -454,7 +489,8 @@ account.tick(state, conf(qv), OURS, pf, fw, utc(2026, 11, 20, 10, 5, 5))
 check('a reset by hand while the clock was ahead: not undone when it comes back', (q_state(state, U1)['up'], pf.table),
       (0, set()))
 
-# --- the cut with os-xgs-npu: a stand-in of its lists_cut.py, which keeps its record of the table on disk
+# --- the cut with os-xgs-npu: here, at once, in every case; a stand-in of its lists_cut.py, which keeps its
+# record of the table on disk, finds nothing left after it
 
 
 def lists_cut(pf):
@@ -463,23 +499,24 @@ def lists_cut(pf):
     record is what the table holds now. No record: everything is new (its first run)."""
     now = set(pf.table or ())
     try:
-        with open(account.LISTS_RECORD, encoding='utf-8') as handle:
+        with open(RECORD, encoding='utf-8') as handle:
             before = set(json.load(handle))
     except (OSError, ValueError):
         before = None
     new = {a for a in now if before is None or str(ipaddress.ip_network(a)) not in before}
     killed = enforce.cut(pf, sorted(new))
-    with open(account.LISTS_RECORD, 'w', encoding='utf-8') as handle:
+    with open(RECORD, 'w', encoding='utf-8') as handle:
         json.dump(sorted(str(ipaddress.ip_network(a)) for a in now), handle)
     return killed
 
 
 def gone_over(settings_=LISTED, firewall=None):
-    """A host gone over its volume quota at t0 + 60, os-xgs-npu's lists_cut.py run once before."""
-    if os.path.exists(account.LISTS_RECORD):
-        os.remove(account.LISTS_RECORD)
+    """A host gone over its volume quota at t0 + 60, os-xgs-npu's lists_cut.py run once before; pf forgets
+    a state once it is killed."""
+    if os.path.exists(RECORD):
+        os.remove(RECORD)
     state = {}
-    pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set())
+    pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set(), vanish=True)
     firewall = firewall or FakeFw(project=True)
     account.tick(state, conf(qv, **settings_), OURS, pf, firewall, t0)
     lists_cut(pf)
@@ -491,9 +528,8 @@ def gone_over(settings_=LISTED, firewall=None):
 ALL = ['0001/44128282', '0002/44128282', '0101/44128282']
 LATER = ['0201/44128282', '0202/44128282']                 # what the host opened since
 state, pf = gone_over()
-here = sorted(pf.killed)
-check('with os-xgs-npu: a host gone over, new to lists_cut.py - nothing cut here, all of it at its next run',
-      (here, lists_cut(pf), sorted(pf.killed)), ([], 3, ALL))
+check('with os-xgs-npu: a host gone over, new to lists_cut.py - every connection of it cut here, by the read that '
+      'blocks it, and lists_cut.py\'s next run finds nothing left', (sorted(pf.killed), lists_cut(pf)), (ALL, 0))
 # a reboot: pf's table empty, the record of lists_cut.py's last run still holding the host
 pf.table, pf.killed = set(), []
 pf.text = pair(50300, 0, 0, 5, ['0201', '0202'])
@@ -501,15 +537,14 @@ answer = account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True),
 check('a boot: the table filled again, and the host\'s connections cut here - lists_cut.py, its record from before '
       'the boot holding the host, would never take it as new', (pf.table, answer['added'], sorted(pf.killed),
                                                               lists_cut(pf)), ({'192.0.2.10'}, 1, LATER, 0))
-# turned off and on: off empties the table and takes quota_over out of the cut list, so lists_cut.py stops
-# looking at it and keeps its record
+# turned off and on: off empties the table and takes quota_over out of the cut list
 state, pf = gone_over()
 lists_cut(pf)
 account.tick(state, conf(qv, enabled=False, **LISTED), OURS, pf, FakeFw(project=True), t0 + 120)
 pf.text, pf.killed = pair(50300, 0, 0, 5, ['0201', '0202']), []
 account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 180)
-check('turned off, then on again: the host back in the table and its connections cut here, not left to a '
-      'lists_cut.py whose record still holds it', (pf.table, sorted(pf.killed), lists_cut(pf)), ({'192.0.2.10'}, LATER, 0))
+check('turned off, then on again: the host back in the table and its connections cut here',
+      (pf.table, sorted(pf.killed), lists_cut(pf)), ({'192.0.2.10'}, LATER, 0))
 # CARP: master, backup a while, master again - the host in the table all along
 state, pf = gone_over()
 lists_cut(pf)
@@ -530,27 +565,247 @@ check('... once: the next read cuts nothing again', pf.killed, [])
 state, pf = gone_over()
 lists_cut(pf)
 account.reset(state, U1, conf(qv, **LISTED))
+pf.text = pair(50300, 0, 0, 5, ['0201', '0202'])                         # a connection made again
 account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 70)
-pf.text, pf.killed = (pair(50123, 4 * MB, 0, 75, ['0001', '0002']) + pair(50300, 0, 0, 5, ['0201', '0202'])), []
+passed = set(pf.table)
+pf.text, pf.killed = pair(50300, 2 * MB, 0, 15, ['0201', '0202']), []
 account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 80)
-check('reset, then over again within lists_cut.py\'s minute: cut here', (pf.table, sorted(pf.killed)),
-      ({'192.0.2.10'}, ['0001/44128282', '0002/44128282'] + LATER))
+check('reset, then over again within lists_cut.py\'s minute: out of the table, back in it, and cut here',
+      (passed, pf.table, sorted(pf.killed), lists_cut(pf)), (set(), {'192.0.2.10'}, LATER, 0))
 # quota_over never put in the cut list - os-xgs-npu installed since the last Apply
 state, pf = gone_over(settings_={'cut_lists': ['o1']})
-check('quota_over never put in XGS: Settings\' cut list (os-xgs-npu installed since the last Apply): cut here, at once',
+check('quota_over not yet in XGS: Settings\' cut list (os-xgs-npu installed since the last Apply): cut here, at once',
       sorted(pf.killed), ALL)
 # taken out of it by the owner
 state, pf = gone_over(settings_={'cut_lists': ['o1'], 'cut_added': [OURS['uuid']]})
 check('quota_over taken out of the cut list by the owner: nothing cut - his choice', pf.killed, [])
-# a record that cannot be read
-state, pf = gone_over()
-with open(account.LISTS_RECORD, 'w', encoding='utf-8') as handle:
-    handle.write('{"not": "a list"}')
-pf.table, pf.killed = set(), []
-account.tick(state, conf(qv, **LISTED), OURS, pf, FakeFw(project=True), t0 + 120)
-check('lists_cut.py\'s record not a list as it writes it: cut here - twice costs nothing, never costs the quota',
-      sorted(pf.killed), ALL)
+# until 2026-11-20 the read looked for lists_cut.py's record (/var/db/os-xgs-npu/lists/quota_over.json, here
+# absent, so the cases above cut here then too) and left an address it did not hold to that list's next minute
+check('lists_cut.py\'s record of the table no longer read: the read cuts whether that list would take the address as '
+      'new or not', (hasattr(account, 'LISTS_RECORD'), account.cut_here({'192.0.2.10'}, conf(qv, **LISTED), OURS, True)),
+      (False, {'192.0.2.10'}))
 records.cleanup()
+
+# --- the cut in hardware first: a stand-in of os-xgs-npu's hwdrop.py, in a folder of its own beside a flows.py,
+# as os-blocklists' tools/test-hwdrop.py has it. result: a count, None (raises), 'slow' (pages through a flow
+# table of EVENTS.conns connections, EVENTS.each seconds each, as hwdrop does: a generator that holds the
+# flow-table lock and puts the shared page place back in its finally, an `in` test for every connection, a
+# verdict for each that matches) or 'stuck' (one driver call of 3 s that never looks back)
+FAKE_HWDROP = '''
+import os
+import sys
+import threading
+import time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import flows  # noqa: E402,F401 - os-xgs-npu's hwdrop imports its flows.py this way
+import hwdrop_events  # noqa: E402
+
+
+def pages():
+    hwdrop_events.lock.append(threading.current_thread().name)
+    try:
+        for i in range(hwdrop_events.conns):
+            time.sleep(hwdrop_events.each)
+            yield i
+    finally:
+        hwdrop_events.events.append(('place 0', threading.current_thread().name, time.monotonic()))
+        hwdrop_events.lock.clear()
+
+
+def drop_addresses(contains, path='/conf/config.xml'):
+    hwdrop_events.events.append(('drop_addresses', sorted(a for a in hwdrop_events.probe if a in contains)))
+    if hwdrop_events.result == 'slow':
+        dropped = 0
+        for i in pages():
+            if hwdrop_events.probe[0] in contains:
+                hwdrop_events.events.append(('verdict', i, time.monotonic()))
+                dropped += 1
+        return dropped
+    if hwdrop_events.result == 'stuck':
+        time.sleep(3)
+        return 9
+    if hwdrop_events.result is None:
+        raise RuntimeError('no table')
+    return hwdrop_events.result
+'''
+EVENTS = types.ModuleType('hwdrop_events')
+EVENTS.events, EVENTS.probe, EVENTS.result, EVENTS.lock, EVENTS.conns, EVENTS.each = [], [], 0, [], 20, 0.3
+sys.modules['hwdrop_events'] = EVENTS
+hardware = tempfile.TemporaryDirectory()
+HWDROP = os.path.join(hardware.name, 'xgs', 'hwdrop.py')
+os.makedirs(os.path.dirname(HWDROP))
+with open(HWDROP, 'w', encoding='utf-8') as handle:
+    handle.write(FAKE_HWDROP)
+with open(os.path.join(hardware.name, 'xgs', 'flows.py'), 'w', encoding='utf-8') as handle:
+    handle.write('')
+NO_HWDROP = os.path.join(hardware.name, 'absent', 'hwdrop.py')
+
+
+def kinds(events):
+    return [e[0] for e in events if e[0] in ('drop_addresses', 'kill')]
+
+
+def settle(wait=6):
+    """Every hardware step left at its deadline, ended."""
+    until = time.monotonic() + wait
+    for t in list(enforce._left):
+        t.join(max(0, until - time.monotonic()))
+    enforce._left[:] = [t for t in enforce._left if t.is_alive()]
+    return not enforce._left
+
+
+def place_back(wait=3):
+    """The stand-in's page place put back (its paging generator's finally): (thread, when), or None."""
+    until = time.monotonic() + wait
+    while time.monotonic() < until:
+        for e in list(EVENTS.events):
+            if e[0] == 'place 0':
+                return e[1], e[2]
+        time.sleep(0.05)
+    return None
+
+
+def hw_over(result, path=HWDROP, settings_=LISTED, project=True, quota_=None, table=None):
+    """A host gone over its volume quota at t0 + 60, os-xgs-npu's hwdrop.py at path answering result:
+    (the read's answer, what happened in order - the drop and pf's kills - what the log was told, the
+    read's seconds, whether the module search path is as it was)."""
+    EVENTS.events[:], EVENTS.result, EVENTS.lock[:] = [], result, []
+    EVENTS.probe = ['192.0.2.10', '2001:db8:1::10', '192.0.2.11', '198.51.100.7']
+    state = {}
+    pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']), table=set(), events=EVENTS.events)
+    firewall = FakeFw(project=project, hwdrop=path, table=table)
+    account.tick(state, conf(quota_ or qv, **settings_), OURS, pf, firewall, t0)
+    pf.text = pair(50123, 2 * MB, 0, 61, ['0001', '0002']) + inbound(40000, 5, 5, 61, '0101', host='192.0.2.10')
+    LOGGED.clear()
+    before = list(sys.path)
+    started = time.monotonic()
+    answer = account.tick(state, conf(quota_ or qv, **settings_), OURS, pf, firewall, t0 + 60)
+    took = time.monotonic() - started
+    return answer, list(EVENTS.events), list(LOGGED), took, sys.path == before
+
+
+def cut_lines(logged):
+    return [m for m in logged if 'over their quota cut' in m]
+
+
+CUT3 = '3 open connection(s) of 1 host address(es) over their quota cut'
+answer, events, logged, took, kept = hw_over(3)
+check('with os-xgs-npu: a host gone over has its connections dropped on the coprocessor once, before the first pf '
+      'state is killed - then every state of it killed', kinds(events), ['drop_addresses', 'kill', 'kill', 'kill'])
+check('... the drop asked for the host\'s address alone', events[0], ('drop_addresses', ['192.0.2.10']))
+check('... how many it dropped in the answer, beside the kills', (answer.get('dropped'), answer.get('cut')), (3, 3))
+check('... and in the system log\'s line', cut_lines(logged), [CUT3 + ', 3 dropped in hardware first'])
+check('... the module search path as it was', kept, True)
+answer, events, logged, took, kept = hw_over(4, quota_=quota(U1, '02:00:00:aa:bb:cc', volume=MB),
+                                             table={'02:00:00:aa:bb:cc': ['192.0.2.10', '2001:db8:1::10']})
+check('a MAC over its quota: both its addresses in the one drop', (events[0], answer.get('dropped'), cut_lines(logged)),
+      (('drop_addresses', ['192.0.2.10', '2001:db8:1::10']), 4,
+       ['3 open connection(s) of 2 host address(es) over their quota cut, 4 dropped in hardware first']))
+answer, events, logged, took, kept = hw_over(0)
+check('"Cut in hardware" off - hwdrop drops none: 0 in the answer and the log, every state killed as before',
+      (answer.get('dropped'), answer.get('cut'), cut_lines(logged)), (0, 3, [CUT3 + ', 0 dropped in hardware first']))
+answer, events, logged, took, kept = hw_over(3, settings_={'cut_lists': ['o1'], 'cut_added': [OURS['uuid']]})
+check('quota_over taken out of the cut list by the owner: nothing dropped in hardware, nothing killed, nothing said',
+      (events, 'cut' in answer, 'dropped' in answer, cut_lines(logged)), ([], False, False, []))
+answer, events, logged, took, kept = hw_over(3, settings_={'cut_lists': ['o1']})
+check('quota_over not yet in the cut list: dropped in hardware first all the same',
+      (kinds(events), answer.get('dropped')), (['drop_addresses', 'kill', 'kill', 'kill'], 3))
+answer, events, logged, took, kept = hw_over(3, project=False, settings_={})
+check('without os-xgs-npu: nothing asked of a hwdrop.py, pf alone, the log\'s line as before',
+      (kinds(events), 'dropped' in answer, cut_lines(logged)), (['kill', 'kill', 'kill'], False, [CUT3]))
+answer, events, logged, took, kept = hw_over(3, path=NO_HWDROP)
+check('os-xgs-npu with no hwdrop.py: pf alone - every state killed, no "dropped", the log\'s line as before',
+      (kinds(events), 'dropped' in answer, cut_lines(logged)), (['kill', 'kill', 'kill'], False, [CUT3]))
+broken = os.path.join(hardware.name, 'broken', 'hwdrop.py')
+os.makedirs(os.path.dirname(broken))
+with open(broken, 'w', encoding='utf-8') as handle:
+    handle.write('import no_such_module_here\n')
+answer, events, logged, took, kept = hw_over(3, path=broken)
+check('a hwdrop.py that does not load: as with none, said, the module search path as it was',
+      (kinds(events), 'dropped' in answer, any('could not be loaded' in m for m in logged), kept),
+      (['kill', 'kill', 'kill'], False, True, True))
+answer, events, logged, took, kept = hw_over(None)
+check('a hwdrop that raises: the pf cut goes on - every state killed - and how many it dropped is not known',
+      (kinds(events), answer.get('dropped'), answer.get('cut')), (['drop_addresses', 'kill', 'kill', 'kill'], 'unknown', 3))
+check('... said: what it raised, and the cut\'s line', (any('failed' in m and 'no table' in m for m in logged),
+                                                     cut_lines(logged)),
+      (True, [CUT3 + ', how many were dropped in hardware first is not known']))
+# past its deadline (1 s here): left there, the pf cut at once; stopped at its next connection, no verdict
+# after the deadline, the page place put back in its own thread
+saved = enforce.HW_DEADLINE
+enforce.HW_DEADLINE = 1
+try:
+    answer, events, logged, took, kept = hw_over('slow')
+finally:
+    enforce.HW_DEADLINE = saved
+returned = time.monotonic()
+check('a hardware step paging slowly past its deadline: left at 1 s, the states killed - the read done in %.2f s' % took,
+      (kinds(events), answer.get('dropped'), answer.get('cut'), took < 1.6),
+      (['drop_addresses', 'kill', 'kill', 'kill'], 'unknown', 3, True))
+check('... said in the system log', any('took more than 1 s' in m and 'not known' in m for m in logged), True)
+back = place_back()
+check('... the step stopped at its next connection, the page place put back and the lock let go in its own thread',
+      (back is not None and back[0] == 'quota-hwdrop' and back[1] - returned < 0.6, EVENTS.lock), (True, []))
+verdicts = [e for e in EVENTS.events if e[0] == 'verdict']
+check('... no verdict written after the deadline (%d before it)' % len(verdicts),
+      bool(verdicts) and all(e[2] <= returned + 0.05 for e in verdicts), True)
+check('... and it has ended', settle(), True)
+# stuck in one call that never looks back: nothing held up, and no second step beside it
+enforce.HW_DEADLINE = 1
+try:
+    answer, events, logged, took, kept = hw_over('stuck')
+    check('a hardware step stuck in the driver: left at 1 s, the states killed - the read done in %.2f s' % took,
+          (kinds(events), answer.get('dropped'), took < 1.6), (['drop_addresses', 'kill', 'kill', 'kill'], 'unknown', True))
+    answer, events, logged, took, kept = hw_over(3)
+    check('... while it runs, no second step beside it: the states killed, how many dropped not known, said',
+          (kinds(events), answer.get('dropped'), any('still runs' in m for m in logged)),
+          (['kill', 'kill', 'kill'], 'unknown', True))
+finally:
+    enforce.HW_DEADLINE = saved
+check('... it ends', settle(), True)
+answer, events, logged, took, kept = hw_over(3)
+check('... and then the hardware step runs again', answer.get('dropped'), 3)
+# the step itself
+EVENTS.events[:], EVENTS.result = [], 2
+check('drop_in_hardware: the addresses as hwdrop writes a connection\'s ends - IPv6 in its short form - and one '
+      'that is not an address left out', (enforce.drop_in_hardware(['2001:DB8:1::0010', 'not an address'], HWDROP),
+                                          EVENTS.events[:1]), (2, [('drop_addresses', ['2001:db8:1::10'])]))
+check('drop_in_hardware with no hwdrop.py: None, nothing asked', (enforce.drop_in_hardware(['192.0.2.10'], NO_HWDROP),
+                                                                  enforce.drop_in_hardware(['192.0.2.10'], None)),
+      (None, None))
+check('within(): the step\'s result', enforce.within(1, lambda stop, a: a + 1, 41), 42)
+try:
+    enforce.within(1, lambda stop: 1 / 0)
+    raised = None
+except RuntimeError as error:
+    raised = str(error)
+check('within(): what the step raised, as text', raised is not None and 'ZeroDivisionError' in raised, True)
+started = time.monotonic()
+try:
+    enforce.within(0.5, lambda stop: time.sleep(2))
+    late = False
+except enforce.HardwareLate:
+    late = True
+took = time.monotonic() - started
+check('within(): a step that never looks back is left at 0.5 s (%.2f s)' % took, (late, took < 0.8), (True, True))
+try:
+    enforce.within(0.5, lambda stop: 1)
+    busy = False
+except enforce.HardwareBusy:
+    busy = True
+check('within(): while it runs, no second step is started', busy, True)
+check('within(): it ends, and then a step runs again', (settle(), enforce.within(0.5, lambda stop: 2)), (True, 2))
+try:
+    enforce.within(0.3, lambda stop: stop.wait(5))
+except enforce.HardwareLate:
+    pass
+check('within(): a step waiting on its stop ends once it is set', settle(wait=0.5), True)
+check('within() uses no signal and no timer: SIGALRM as it was, no real-time timer set',
+      (signal.getsignal(signal.SIGALRM) == signal.SIG_DFL if hasattr(signal, 'SIGALRM') else True,
+       signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0) if hasattr(signal, 'getitimer') else True), (True, True))
+check('no hardware step left running', (settle(), [t.name for t in threading.enumerate() if t.name == 'quota-hwdrop']),
+      (True, []))
+hardware.cleanup()
 
 # never the firewall's own address
 state = {}
