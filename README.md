@@ -35,7 +35,10 @@ Time and volume quotas per host - per user and group with os-useridentity is the
 - **a quota for a host** - one IPv4 or IPv6 address, or a MAC: a MAC's addresses are taken from
   OPNsense's own host discovery at each read - those it saw in the last hour, through
   `configctl hostwatch dump`'s script; the ARP and neighbour tables where that cannot be run - so a
-  device with IPv4 and IPv6 keeps one quota while its IPv6 addresses change. Each quota has a volume in
+  device with IPv4 and IPv6 keeps one quota while its IPv6 addresses change. An address new to the MAC
+  counts from the first read after host discovery lists it - within 20 s of its first packets, measured
+  on the second XGS 3300 - and what its connections carried meanwhile is counted then, in full, from
+  pf's states. Each quota has a volume in
   megabytes (1 MB = 1,000,000 bytes, both ways together), minutes of use, or both, and a cycle: daily
   from 00:00, weekly from Monday 00:00, or monthly from the 1st, in the firewall's time zone. A host may
   have more than one - a daily time and a monthly volume;
