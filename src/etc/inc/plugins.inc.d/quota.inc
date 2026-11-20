@@ -158,7 +158,9 @@ function quota_firewall($fw)
                 quota_block($fw, $family, $self + ['protocol' => 'udp', 'to_port' => $ports],
                     'a host over its quota, to the firewall but DNS');
             }
-            /* ICMP; IP in IP, IPv6 in IP, GRE, ESP and AH - a tunnel to the firewall would carry it on */
+            /* ICMP; IP in IP, IPv6 in IP, GRE, ESP and AH - a tunnel to the firewall would carry it on. pf looks
+             * through AH and filters what it carries, so AH meets the rule of the protocol inside; its own rule
+             * meets only a fragment pf cannot look into (measured on the XGS 136, 2026-11-20) */
             foreach ([$family == 'inet' ? 'icmp' : 'ipv6-icmp', '4', '41', '47', '50', '51'] as $protocol) {
                 quota_block($fw, $family, $self + ['protocol' => $protocol],
                     'a host over its quota, to the firewall');
