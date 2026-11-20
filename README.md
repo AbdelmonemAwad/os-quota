@@ -82,8 +82,8 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   tried again at the next read, unless the host is back in the table by then. At the plugin's removal no
   read follows: everything the table holds and everything kept is handed back there and then, in one step,
   and if that step is late or fails the system log names the addresses and says that their connections
-  stay dropped on the coprocessor until their senders stop - XGS: Offloaded Flows' Return to host, or a
-  reboot, frees them. An os-xgs-npu older than `release_addresses` (2026-11-17) hands nothing back;
+  stay dropped on the coprocessor until their senders stop - XGS: Offloaded Flows' Return to host frees
+  them. An os-xgs-npu older than `release_addresses` (2026-11-17) hands nothing back;
 - **a new cycle** - the count starts again from nothing and the host passes again; **Reset** on a
   quota's row does the same by hand, now. A boot in the middle of a cycle loses no count: the counts are
   kept in `/var/db/os-quota`, and a read at the end of the boot fills the table again;

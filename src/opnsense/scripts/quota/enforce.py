@@ -282,7 +282,7 @@ def release_in_hardware(addresses, path, say=None, later=True):
     `later`: whether a read follows that tries the addresses again, as the caller keeps them. At the
     plugin's removal none does, and what say() is told then is what is true: the connections the step did
     not hand back stay dropped on the coprocessor until their senders stop, and XGS: Offloaded Flows'
-    Return to host, or a reboot, frees them."""
+    Return to host frees them."""
     say = say or (lambda message: None)
     hw = hwdrop(path, say)
     if hw is None or not hasattr(hw, 'release_addresses'):
@@ -293,7 +293,7 @@ def release_in_hardware(addresses, path, say=None, later=True):
     else:
         what = 'the hand-back from hardware at the removal of Quotas'
         then = ('the connections of %s that the coprocessor dropped and it did not hand back stay dropped there until '
-                'their senders stop - XGS: Offloaded Flows\' Return to host, or a reboot, frees them' % named(addresses))
+                'their senders stop - XGS: Offloaded Flows\' Return to host frees them' % named(addresses))
     try:
         return int(within(HW_DEADLINE, lambda stop: hw.release_addresses(Until(match, stop))) or 0)
     except HardwareBusy:

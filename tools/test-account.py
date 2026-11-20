@@ -919,7 +919,7 @@ check('account.py --leave (the removal): the table emptied, and what it held and
       (1, set(), [('release_addresses', ['192.0.2.10', '192.0.2.11'])], 2))
 check('... said as the removal\'s, and nothing kept: no read follows', ([m for m in logged if 'handed back' in m],
                                                                         'release' in left), ([REMOVED], False))
-TRUE_END = 'stay dropped there until their senders stop - XGS: Offloaded Flows\' Return to host, or a reboot, frees them'
+TRUE_END = 'stay dropped there until their senders stop - XGS: Offloaded Flows\' Return to host frees them'
 state, pf, firewall = blocked()
 state['release'] = ['192.0.2.11']
 out, events, logged, left, took = command('--leave', state, pf, firewall, None)
