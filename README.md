@@ -73,6 +73,14 @@ Time and volume quotas per host - per user and group with os-useridentity is the
   first read after a pause - the plugin on again, a CARP backup become master - cuts every blocked host's
   connections: what it opened while nothing blocked it, or what pfsync brought from the other firewall, is
   open still;
+- **the hand-back** - a connection the coprocessor dropped stays dropped there while its sender goes on
+  sending it, whatever the table says after, so where os-xgs-npu is installed the read that takes a host's
+  address out of `quota_over` (a new cycle, a Reset, its quota changed or removed, the plugin turned off)
+  hands its connections back to the host through os-xgs-npu's `hwdrop` (`release_addresses`), as
+  os-blocklists does for the addresses a list lost, and pf decides their frames again: a sender that kept
+  sending all along gets through again. The step has the same 5 s; one left at its deadline or failed is
+  tried again at the next read, unless the host is back in the table by then. An os-xgs-npu older than
+  `release_addresses` (2026-11-17) hands nothing back;
 - **a new cycle** - the count starts again from nothing and the host passes again; **Reset** on a
   quota's row does the same by hand, now. A boot in the middle of a cycle loses no count: the counts are
   kept in `/var/db/os-quota`, and a read at the end of the boot fills the table again;
@@ -133,11 +141,6 @@ empty, and an owner's own value stays his.
   up to a minute, plus the few seconds the coprocessor's counts take to reach pf: that read blocks it
   and cuts its open connections. At hardware rates that is gigabytes. **Not measured yet** on either
   appliance;
-- **no hand-back from hardware** - with "Cut in hardware" on, a connection the coprocessor dropped for a
-  host over its quota stays dropped there while its sender goes on sending it, as os-xgs-npu's `hwdrop`
-  leaves it - after the host passes again too: a new cycle or a Reset lets its new connections through,
-  not one that kept sending all along. os-blocklists hands such connections back for the addresses a
-  list lost; this plugin does not yet;
 - **not the ISP's count** - pf counts IP bytes, headers included, not Ethernet frames, and a quota counts
   to and from the firewall itself too;
 - **no host behind a router by its MAC** - the firewall sees the router's: name such a host by its
@@ -182,20 +185,23 @@ On 2026-11-20, from this branch, away from an appliance - the checks, run under 
   states, bytes up from the end that made it, the ids with a gateway or route-to beside them, only the
   watched hosts' states read past their first line, the same answer with and without the quick look
   through, what a cut kills, and 100,000 states read;
-- **the count, the cycles and the block** - `tools/test-account.py`, 142 checks with a stand-in pfctl and
+- **the count, the cycles and the block** - `tools/test-account.py`, 162 checks with a stand-in pfctl and
   firewall: the settings from a `config.xml` - the minute threshold left empty among them - the hosts
-  taken and refused, the cycles in UTC and around the clock changes of Europe/Berlin, America/New_York
-  and America/Santiago (which changes at midnight), what a connection gained, a connection begun since,
-  one older, a tuple reused, a state ending first, a restart from the saved state, a second quota on one
-  host, the minutes of use and their threshold, the cycle turning, a clock set back, a clock a day ahead
-  and back, a real-time clock at 2001 after a boot, the table filled, emptied and filled again, the cut
-  by the read that blocks, with os-xgs-npu or without it - a boot, the plugin off and on, a CARP master's
-  return, a Reset and a second overrun, quota_over not yet listed - and a stand-in of its `lists_cut.py`,
-  keeping its record on disk, finding nothing left after it; nothing cut where the owner took quota_over
-  out of the list; the cut in hardware first through a stand-in of os-xgs-npu's `hwdrop.py` - called
-  once, before the first pf state is killed, with the host's addresses alone, its count in the answer and
-  the log, and the pf cut going on without it when it is missing, does not load, raises, pages past its
-  deadline or is stuck in the driver - the firewall's own address never blocked, a MAC's addresses
+  taken and refused, the cycles in UTC and around the clock changes of Europe/Berlin, America/New_York and
+  America/Santiago (which changes at midnight), what a connection gained, a connection begun since, one
+  older, a tuple reused, a state ending first, a restart from the saved state, a second quota on one host,
+  the minutes of use and their threshold, the cycle turning, a clock set back, a clock a day ahead and
+  back, a real-time clock at 2001 after a boot, the table filled, emptied and filled again, the cut by the
+  read that blocks, with os-xgs-npu or without it - a boot, the plugin off and on, a CARP master's return,
+  a Reset and a second overrun, quota_over not yet listed - and a stand-in of its `lists_cut.py`, keeping
+  its record on disk, finding nothing left after it; nothing cut where the owner took quota_over out of
+  the list; the cut in hardware first through a stand-in of os-xgs-npu's `hwdrop.py` - called once, before
+  the first pf state is killed, with the host's addresses alone, its count in the answer and the log, and
+  the pf cut going on without it when it is missing, does not load, raises, pages past its deadline or is
+  stuck in the driver; the hand-back of an address the table loses - a Reset, a new cycle, a quota removed
+  or given another host, a MAC's address changed, the plugin off, `--flush` - and not of one it keeps, the
+  read going on when `hwdrop.py` is missing, older than `release_addresses`, raising or late, and what it
+  could not hand back tried at the next read - the firewall's own address never blocked, a MAC's addresses
   changing, the alias missing or not the plugin's, the owner's alias of that name never emptied, pfctl
   refusing, off, a CARP backup, the reset, the command line and its lock, a read waiting for the lock
   while the removal takes its directory, the page's status;
