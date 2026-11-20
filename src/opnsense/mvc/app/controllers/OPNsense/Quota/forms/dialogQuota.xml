@@ -1,0 +1,40 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<form>
+    <field>
+        <id>quota.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+    </field>
+    <field>
+        <id>quota.host</id>
+        <label>Host</label>
+        <type>text</type>
+        <help>One IPv4 or IPv6 address, or a MAC address. A MAC's addresses are taken from the firewall's host discovery at each read, so a device keeps one quota for IPv4 and IPv6 while its IPv6 addresses change; behind a router the firewall sees the router's MAC, so name such a host by its address. The firewall's own addresses are never counted or blocked.</help>
+    </field>
+    <field>
+        <id>quota.volume</id>
+        <label>Volume (MB)</label>
+        <type>text</type>
+        <help>Megabytes the host may move in a cycle, both ways together and to the firewall itself too (1 MB = 1,000,000 bytes; 1000 is 1 GB). Empty: no volume limit.</help>
+    </field>
+    <field>
+        <id>quota.minutes</id>
+        <label>Time (minutes of use)</label>
+        <type>text</type>
+        <help>Minutes of use the host may have in a cycle: minutes in which it moved more than Settings' Minute of use above. Empty: no time limit.</help>
+    </field>
+    <field>
+        <id>quota.cycle</id>
+        <label>Cycle</label>
+        <type>dropdown</type>
+        <help>When the count starts again from nothing, in the firewall's time zone: a host blocked by this quota passes again then.</help>
+    </field>
+    <field>
+        <id>quota.description</id>
+        <label>Description</label>
+        <type>text</type>
+    </field>
+</form>

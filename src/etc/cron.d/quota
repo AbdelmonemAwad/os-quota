@@ -1,0 +1,9 @@
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+#
+# Every minute (the plan's cron item): each quota counted from pf's states, a cycle that has turned started
+# again, and the table of the hosts over their quota made again from the counts. Off, it finds the plugin
+# off and changes nothing.
+
+* * * * * root /usr/local/opnsense/scripts/quota/account.py > /dev/null 2>&1

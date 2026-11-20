@@ -1,0 +1,18 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<form>
+    <field>
+        <id>quota.general.enabled</id>
+        <label>Enable</label>
+        <type>checkbox</type>
+        <help>Count each quota's host from pf's states once a minute, and block a host over its quota until its cycle starts again. Off by default. Off, nothing is counted, no host is blocked, and the alias quota_over leaves Firewall: Aliases - switched off instead where a rule or a setting still names it. The counts of the cycle are kept.</help>
+    </field>
+    <field>
+        <id>quota.general.minute_threshold</id>
+        <label>Minute of use above (KB)</label>
+        <type>text</type>
+        <help>A time quota counts minutes of use: a minute of the clock in which the host moved more than this many kilobytes, both ways together (1 KB = 1,000 bytes), so a device that only keeps itself connected in the background uses none. 0: any byte makes a minute of use. Empty: the plugin's own value, 100 KB in this release - a first value, until a measurement of idle devices sets it; left empty, a later release's value applies.</help>
+    </field>
+</form>

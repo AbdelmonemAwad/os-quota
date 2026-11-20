@@ -1,0 +1,85 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<model>
+    <mount>//OPNsense/Quota</mount>
+    <version>1.0.0</version>
+    <description>Quotas</description>
+    <items>
+        <!--
+            scripts/quota/settings.py, aliases.php and plugins.inc.d/quota.inc read these straight out of
+            config.xml by element name, so the names are not free.
+        -->
+        <general>
+            <!-- Off by default: it blocks hosts, so nothing is counted or blocked until it is turned on. -->
+            <enabled type="BooleanField">
+                <Required>Y</Required>
+                <Default>0</Default>
+            </enabled>
+            <!-- T of the time quota: a minute of use is one in which the host moved more than this many
+                 kilobytes (1 KB = 1,000 bytes). Empty by default, and empty is settings.py's MINUTE_KB,
+                 100, PROVISIONAL: the plan takes it from a lab measurement of an idle real device on
+                 both appliances, not taken yet. No default is written here, so the value a release
+                 takes from that measurement reaches every firewall whose owner did not type his own:
+                 a default saved into config.xml would stay there. -->
+            <minute_threshold type="IntegerField">
+                <Required>N</Required>
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>1000000</MaximumValue>
+                <ValidationMessage>Kilobytes, from 0 to 1000000, or empty for the plugin's own value.</ValidationMessage>
+            </minute_threshold>
+            <!--
+                Not a setting: the uuid of the plugin's alias when it put it in os-xgs-npu's cut list
+                itself, written by aliases.php alone and on no form, so one the owner takes out of XGS:
+                Settings is never put back.
+            -->
+            <cut_added type="TextField">
+                <Required>N</Required>
+                <Mask>/^[0-9a-fA-F,-]{0,200}$/</Mask>
+            </cut_added>
+        </general>
+        <!-- A quota for a host (svc-4-03, svc-2-09): by volume, by minutes of use, or both, on a cycle. -->
+        <quotas>
+            <quota type="ArrayField">
+                <enabled type="BooleanField">
+                    <Required>Y</Required>
+                    <Default>1</Default>
+                </enabled>
+                <!-- An address, IPv4 or IPv6, or a MAC (settled point 9's starred choice); Quota.php
+                     checks it through library OPNsense\Quota\Host. -->
+                <host type="TextField">
+                    <Required>Y</Required>
+                    <Mask>/^[0-9A-Fa-f:.\-]{2,45}$/</Mask>
+                    <ValidationMessage>An IPv4 or IPv6 address, or a MAC address.</ValidationMessage>
+                </host>
+                <!-- Megabytes (1 MB = 1,000,000 bytes) in the cycle, both ways together; empty: none -->
+                <volume type="IntegerField">
+                    <Required>N</Required>
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>1000000000</MaximumValue>
+                    <ValidationMessage>Megabytes, from 1 to 1000000000, or empty for no volume limit.</ValidationMessage>
+                </volume>
+                <!-- Minutes of use in the cycle; empty: none -->
+                <minutes type="IntegerField">
+                    <Required>N</Required>
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>44640</MaximumValue>
+                    <ValidationMessage>Minutes, from 1 to 44640, or empty for no time limit.</ValidationMessage>
+                </minutes>
+                <cycle type="OptionField">
+                    <Required>Y</Required>
+                    <Default>day</Default>
+                    <OptionValues>
+                        <day>Daily, from 00:00</day>
+                        <week>Weekly, from Monday 00:00</week>
+                        <month>Monthly, from the 1st 00:00</month>
+                    </OptionValues>
+                </cycle>
+                <description type="DescriptionField">
+                    <Required>N</Required>
+                </description>
+            </quota>
+        </quotas>
+    </items>
+</model>

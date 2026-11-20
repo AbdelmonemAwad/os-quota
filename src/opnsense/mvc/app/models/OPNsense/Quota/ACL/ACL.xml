@@ -1,0 +1,14 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<acl>
+    <page-firewall-quota>
+        <name>Firewall: Quotas</name>
+        <description>Allow access to quotas: the volume and time each host used this cycle, the reset of its count, the quotas and their settings</description>
+        <patterns>
+            <pattern>ui/quota/*</pattern>
+            <pattern>api/quota/*</pattern>
+        </patterns>
+    </page-firewall-quota>
+</acl>

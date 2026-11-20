@@ -1,0 +1,14 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<menu>
+    <!--
+        Where os-xgs-npu is not installed: under Firewall, beside Aliases and Rules, because this page
+        fills an alias and adds the rules that block on it (settled point 13). No order is given.
+        place-menu.sh copies this file, or xgs.xml, to the model's Menu/Menu.xml.
+    -->
+    <Firewall>
+        <Quota VisibleName="Quotas" cssClass="fa fa-hourglass-half fa-fw" url="/ui/quota"/>
+    </Firewall>
+</menu>
