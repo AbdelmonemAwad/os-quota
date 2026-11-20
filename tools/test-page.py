@@ -264,15 +264,16 @@ ids = (set(re.findall(r'\bid="([\w-]+)"', MARKUP)) | set(re.findall(r"'apply_btn
 asked = set(re.findall(r"\$\('#([\w-]+)'\)", SCRIPT))
 check('every element the script looks for by id is on the page, or base_form\'s',
       sorted(asked - ids), [])
-# what the page says of the overshoot and the block is what README says: not measured yet (settled point 4
-# wants it as measured), up to the read that blocks and cuts; DNS and the GUI left to the owner's rules
+# what the page says of the overshoot and the block is what README says: as measured (settled point 4), up to
+# the read that blocks and cuts; DNS and the GUI left to the owner's rules
 note = re.search(r"lang\._\('(Each host is counted(?:[^'\\]|\\.)*)'\)", MARKUP).group(1)
-check('the note under the grid: the overshoot not measured yet, up to the read that blocks and cuts - no longer a '
+check('the note under the grid: the overshoot as measured, up to the read that blocks and cuts - no longer a '
       'second minute for XGS: Settings - DNS and the GUI left to the anti-lockout and the owner\'s rules, a Pass port '
       'forward outside the block',
-      [part in note for part in ('not measured yet', 'before the read that blocks it and cuts its open connections',
+      [part in note for part in ('not measured yet', 'measured, 11.3 GB past a 500 MB quota',
+                                 'before the read that blocks it and cuts its open connections',
                                  'two minutes', 'stay as the anti-lockout rule and the owner', 'Pass filter rule')],
-      [True, True, False, True, True])
+      [False, True, True, False, True, True])
 
 
 # what each line says of the cut: at the read that blocks, in hardware first only where "Cut in hardware" is on;

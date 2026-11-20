@@ -348,7 +348,7 @@
             </tfoot>
         </table>
         <div class="text-muted qt-note">
-            {{ lang._('Each host is counted from pf\'s states once a minute: every byte of its connections, to and from the firewall itself too, and what the coprocessor forwards where os-xgs-npu gives pf its counts. A host goes past its limit by what it moves before the read that blocks it and cuts its open connections: not measured yet - up to about a minute of its traffic. Over its quota it is blocked until its cycle starts again or its count is reset here; DNS and the web GUI on the firewall stay as the anti-lockout rule and the owner\'s own rules make them, and what a port forward with a Pass filter rule lets in is not blocked.') }}
+            {{ lang._('Each host is counted from pf\'s states once a minute: every byte of its connections, to and from the firewall itself too, and what the coprocessor forwards where os-xgs-npu gives pf its counts. A host goes past its limit by what it moves before the read that blocks it and cuts its open connections: up to a minute of its traffic - measured, 11.3 GB past a 500 MB quota at 4 Gbit/s on an XGS 3300, the read 22 s after the limit. Over its quota it is blocked until its cycle starts again or its count is reset here; DNS and the web GUI on the firewall stay as the anti-lockout rule and the owner\'s own rules make them, and what a port forward with a Pass filter rule lets in is not blocked.') }}
         </div>
         <div class="text-muted qt-note">
             {{ lang._('Changes here are counted from the next minute\'s read, or at once with Apply.') }}

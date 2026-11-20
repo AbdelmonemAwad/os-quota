@@ -142,8 +142,10 @@ empty, and an owner's own value stays his.
 
 - **no exact stop at the limit** - a host can go past its volume by what it moves until the next read,
   up to a minute, plus the few seconds the coprocessor's counts take to reach pf: that read blocks it
-  and cuts its open connections. At hardware rates that is gigabytes. **Not measured yet** on either
-  appliance;
+  and cuts its open connections, on the coprocessor first. At hardware rates that is gigabytes. Measured
+  with a 500 MB quota and one transfer at line rate: on the second XGS 3300, at 4 Gbit/s, the read came
+  22 s after the limit and the host went 11.3 GB past it; on the XGS 136, 25 s and 2.1 GB; on a plain
+  OPNsense VM, 9 s and 6.1 GB. On all three the cut came in the same second as the block;
 - **not the ISP's count** - pf counts IP bytes, headers included, not Ethernet frames, and a quota counts
   to and from the firewall itself too;
 - **no host behind a router by its MAC** - the firewall sees the router's: name such a host by its
