@@ -32,7 +32,10 @@ What is checked:
     host, a MAC's address changed, the plugin off at the minute's read and at --flush - handed back from
     hardware, one it keeps not; its count in the answer and the log; hwdrop missing, older than
     release_addresses, raising or late: the read goes on, and what was not handed back is tried at the
-    next read unless the table holds it again; nothing without os-xgs-npu;
+    next read unless the table holds it again; nothing without os-xgs-npu; at the removal (--leave) what
+    the table holds and what was kept handed back in one step and nothing kept, and a step that raises or
+    is late said as it is - the connections stay dropped until their senders stop, and what frees them -
+    never as tried again;
   - off, a CARP backup, the interfaces unreadable: nothing counted, and off the table emptied;
   - a reset by hand; the command line - one read, --flush, --gone, --reset - its lock, its answer when a
     read stops; and the page's status.
@@ -838,7 +841,7 @@ check('a Reset: the host out of the table, and what the coprocessor dropped for 
        [('release_addresses', ['192.0.2.10'])]))
 check('... how many in the answer and the system log, nothing kept', (answer.get('released'), back_lines(logged),
                                                                      'release' in state),
-      (2, ['2 connection(s) of 1 host address(es) no longer over their quota handed back from hardware'], False))
+      (2, ['2 connection(s) of 1 host address(es) no longer blocked handed back from hardware'], False))
 answer, events, logged, took = later(state, pf, firewall, 2, t0 + 130)
 check('... and the next read hands back nothing again', (events, 'released' in answer), ([], False))
 # two hosts over, one reset: the other stays blocked, and dropped
@@ -871,24 +874,92 @@ calls = len(pf.calls)
 answer, events, logged, took = later(state, pf, firewall, 2, t0 + 180, enabled=False)
 check('... the next read while off: nothing asked of pf or hwdrop', (len(pf.calls) - calls, events, 'released' in answer),
       (0, [], False))
+commands = os.path.join(hardware.name, 'commands')
+os.makedirs(commands)
+MINE = ('<opnsense><OPNsense><Quota><general><enabled>0</enabled></general></Quota><Firewall><Alias><aliases>'
+        '<alias uuid="%s"><enabled>1</enabled><name>quota_over</name><type>external</type><description>Quotas: '
+        'hosts over their quota</description></alias></aliases></Alias></Firewall></OPNsense></opnsense>' % OURS['uuid'])
+
+
+def command(verb, state, pf, firewall, result, config=MINE):
+    """account.py --flush (the page's Apply turning it off, install.sh off) or --leave (the removal: uninstall.sh,
+    the package's pre-deinstall) on the state kept, hwdrop answering result: (its answer, what happened in order,
+    what the log was told, the state it left, the seconds it took)."""
+    with open(os.path.join(commands, 'config.xml'), 'w', encoding='utf-8') as handle:
+        handle.write(config)
+    account.save(state, os.path.join(commands, 'state.json'))
+    EVENTS.events[:], EVENTS.result, EVENTS.lock[:] = [], result, []
+    LOGGED.clear()
+    said = io.StringIO()
+    started = time.monotonic()
+    with contextlib.redirect_stdout(said):
+        account.main(['account.py', verb], pf=pf, fw=firewall, config=os.path.join(commands, 'config.xml'),
+                     path=os.path.join(commands, 'state.json'), lock=os.path.join(commands, 'account.lock'))
+    took = time.monotonic() - started
+    return (json.loads(said.getvalue()), list(EVENTS.events), list(LOGGED), account.load(os.path.join(commands, 'state.json')),
+            took)
+
+
 state, pf, firewall = blocked()
-flushed = os.path.join(hardware.name, 'flush')
-os.makedirs(flushed)
-with open(os.path.join(flushed, 'config.xml'), 'w', encoding='utf-8') as handle:
-    handle.write('<opnsense><OPNsense><Quota><general><enabled>0</enabled></general></Quota><Firewall><Alias><aliases>'
-                 '<alias uuid="%s"><enabled>1</enabled><name>quota_over</name><type>external</type><description>Quotas: '
-                 'hosts over their quota</description></alias></aliases></Alias></Firewall></OPNsense></opnsense>'
-                 % OURS['uuid'])
-account.save(state, os.path.join(flushed, 'state.json'))
-EVENTS.events[:], EVENTS.result = [], 2
-said = io.StringIO()
-with contextlib.redirect_stdout(said):
-    account.main(['account.py', '--flush'], pf=pf, fw=firewall, config=os.path.join(flushed, 'config.xml'),
-                 path=os.path.join(flushed, 'state.json'), lock=os.path.join(flushed, 'account.lock'))
-out = json.loads(said.getvalue())
-check('account.py --flush (Apply turning it off, the removal): the table emptied, what it held handed back',
-      (out['emptied'], pf.table, EVENTS.events[:], out.get('released')),
-      (1, set(), [('release_addresses', ['192.0.2.10'])], 2))
+out, events, logged, left, took = command('--flush', state, pf, firewall, 2)
+check('account.py --flush (Apply turning it off): the table emptied, what it held handed back',
+      (out['emptied'], pf.table, events, out.get('released')), (1, set(), [('release_addresses', ['192.0.2.10'])], 2))
+state, pf, firewall = blocked()
+out, events, logged, left, took = command('--flush', state, pf, firewall, None)
+check('account.py --flush, the hand-back raising: how many not known, the address kept for the next read, and said so',
+      (out.get('released'), left.get('release'), any('tried again at the next read' in m for m in logged)),
+      ('unknown', ['192.0.2.10'], True))
+# the removal: what the table holds and what was kept, handed back once, and nothing kept after
+REMOVED = ('2 connection(s) of 2 host address(es) handed back from hardware: Quotas is being removed')
+state, pf, firewall = blocked()
+state['release'] = ['192.0.2.11']                   # kept by an earlier read, its step left at its deadline
+out, events, logged, left, took = command('--leave', state, pf, firewall, 2)
+check('account.py --leave (the removal): the table emptied, and what it held and what an earlier read kept handed back '
+      'in one step', (out['emptied'], pf.table, events, out.get('released')),
+      (1, set(), [('release_addresses', ['192.0.2.10', '192.0.2.11'])], 2))
+check('... said as the removal\'s, and nothing kept: no read follows', ([m for m in logged if 'handed back' in m],
+                                                                        'release' in left), ([REMOVED], False))
+TRUE_END = 'stay dropped there until their senders stop - XGS: Offloaded Flows\' Return to host, or a reboot, frees them'
+state, pf, firewall = blocked()
+state['release'] = ['192.0.2.11']
+out, events, logged, left, took = command('--leave', state, pf, firewall, None)
+removal = [m for m in logged if 'hand-back from hardware' in m]
+check('account.py --leave, the hand-back raising: how many not known, nothing kept, and the log says what is true - '
+      'the connections of both addresses stay dropped until their senders stop, what frees them, never "tried again"',
+      (out.get('released'), 'release' in left, len(removal), all(TRUE_END in m for m in removal),
+       all('192.0.2.10, 192.0.2.11' in m for m in removal), any('tried again' in m for m in logged)),
+      ('unknown', False, 1, True, True, False))
+check('... the line in full', removal, ['the hand-back from hardware at the removal of Quotas failed (RuntimeError: no table); '
+                                        'the connections of 192.0.2.10, 192.0.2.11 that the coprocessor dropped and it did '
+                                        'not hand back ' + TRUE_END])
+state, pf, firewall = blocked()
+enforce.HW_DEADLINE = 1
+try:
+    out, events, logged, left, took = command('--leave', state, pf, firewall, 'slow')
+finally:
+    enforce.HW_DEADLINE = saved
+removal = [m for m in logged if 'hand-back from hardware' in m]
+check('account.py --leave past its deadline (1 s here): left there, the removal goes on - done in %.2f s - nothing kept, '
+      'the log true, never "tried again"' % took,
+      (took < 1.6, out.get('released'), 'release' in left, pf.table,
+       [m.startswith('the hand-back from hardware at the removal of Quotas took more than 1 s and was left there; ')
+        and m.endswith(TRUE_END) for m in removal], any('tried again' in m for m in logged)),
+      (True, 'unknown', False, set(), [True], False))
+check('... it ends', settle(), True)
+check('the removal\'s line with many addresses: the first five named, and how many more',
+      enforce.named(['192.0.2.%d' % n for n in range(1, 9)]),
+      '192.0.2.1, 192.0.2.2, 192.0.2.3, 192.0.2.4, 192.0.2.5 and 3 more')
+state, pf, firewall = blocked(project=False)
+out, events, logged, left, took = command('--leave', state, pf, firewall, 2)
+check('account.py --leave without os-xgs-npu: the table emptied, nothing asked of a hwdrop.py, nothing said',
+      (out['emptied'], pf.table, events, 'released' in out, [m for m in logged if 'hand' in m]),
+      (1, set(), [], False, []))
+state, pf, firewall = blocked()
+state['release'] = ['192.0.2.11']
+out, events, logged, left, took = command('--leave', state, pf, firewall, 2, config='<opnsense>')
+check('account.py --leave, config.xml unreadable: the table left as it is, and what the plugin put in it and what '
+      'was kept handed back all the same', (pf.table, events, out.get('released'), 'release' in left),
+      ({'192.0.2.10'}, [('release_addresses', ['192.0.2.10', '192.0.2.11'])], 2, False))
 # without os-xgs-npu, with no hwdrop.py, with one older than release_addresses: nothing handed back, nothing kept
 for what, kwargs in (('without os-xgs-npu', {'project': False}), ('with no hwdrop.py', {'path': NO_HWDROP}),
                      ('with a hwdrop.py older than release_addresses', {'path': OLDER})):
@@ -1197,10 +1268,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check('another read still running: busy, nothing done', (code, out['status']), (0, 'busy'))
 
     # the plugin removed while a read waits for the lock: uninstall.sh's rm -rf /var/db/os-quota
-    import contextlib
-    import io
     import shutil
-    import threading
     gone_dir = os.path.join(tmp, 'os-quota')
     os.makedirs(gone_dir)
     gone_lock = os.path.join(gone_dir, 'account.lock')

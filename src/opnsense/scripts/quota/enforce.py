@@ -44,6 +44,9 @@ table hands its connections back to the host (release_in_hardware(), hwdrop.rele
 os-blocklists' cut.py hands back the entries a list lost), and pf decides their frames again: a sender that
 kept sending all along gets through again. Its step has the same HW_DEADLINE and thread as the drop and
 stops no read; one left at its deadline or failed is tried again at the next read (account.hand_back()).
+At the plugin's removal it is done once, for all the table held and all that was kept, as no read
+follows: one left at its deadline or failed then leaves those connections dropped on the coprocessor until
+their senders stop, and the log says so, and what frees them.
 """
 
 import importlib.util
@@ -260,29 +263,45 @@ def drop_in_hardware(addresses, path, say=None):
     return UNKNOWN
 
 
-def release_in_hardware(addresses, path, say=None):
+def named(addresses, most=5):
+    """Addresses as a log line names them: the first `most`, and how many more."""
+    addresses = list(addresses)
+    more = len(addresses) - most
+    return ', '.join(addresses[:most]) + (' and %d more' % more if more > 0 else '')
+
+
+def release_in_hardware(addresses, path, say=None, later=True):
     """Every connection with an end among addresses - what quota_over has lost - handed back to the host by
     os-xgs-npu's hwdrop at path, as os-blocklists' cut.py hands back the entries a list lost: a connection
     the coprocessor dropped stays dropped there while its sender goes on sending, whatever the table says
     after (os-xgs-npu's REMAINING A15); handed back, pf decides its frames again. "Cut in hardware" is not
     asked: one dropped while it was on is handed back once it is off as well. How many the driver handed
-    back; UNKNOWN when the step was left at its deadline or failed - the caller tries them again at the next
-    read; None without hwdrop.py, one that does not load, or one older than its release_addresses, which
-    hands nothing back by address."""
+    back; UNKNOWN when the step was left at its deadline or failed; None without hwdrop.py, one that does
+    not load, or one older than its release_addresses, which hands nothing back by address.
+
+    `later`: whether a read follows that tries the addresses again, as the caller keeps them. At the
+    plugin's removal none does, and what say() is told then is what is true: the connections the step did
+    not hand back stay dropped on the coprocessor until their senders stop, and XGS: Offloaded Flows'
+    Return to host, or a reboot, frees them."""
     say = say or (lambda message: None)
     hw = hwdrop(path, say)
     if hw is None or not hasattr(hw, 'release_addresses'):
         return None
     match = ends(addresses)
+    if later:
+        what, then = 'the hand-back from hardware', 'tried again at the next read'
+    else:
+        what = 'the hand-back from hardware at the removal of Quotas'
+        then = ('the connections of %s that the coprocessor dropped and it did not hand back stay dropped there until '
+                'their senders stop - XGS: Offloaded Flows\' Return to host, or a reboot, frees them' % named(addresses))
     try:
         return int(within(HW_DEADLINE, lambda stop: hw.release_addresses(Until(match, stop))) or 0)
     except HardwareBusy:
-        say('the hand-back from hardware: a step left at its deadline still runs, none started beside it; '
-            'tried again at the next read')
+        say('%s: a step left at its deadline still runs, none started beside it; %s' % (what, then))
     except HardwareLate:
-        say('the hand-back from hardware took more than %d s: left there, tried again at the next read' % HW_DEADLINE)
+        say('%s took more than %d s and was left there; %s' % (what, HW_DEADLINE, then))
     except Exception as error:      # hwdrop says it never raises; nothing here is stopped by it if it does
-        say('the hand-back from hardware failed, tried again at the next read: %s' % error)
+        say('%s failed (%s); %s' % (what, error, then))
     return UNKNOWN
 
 

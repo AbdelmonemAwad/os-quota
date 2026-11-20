@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
 #
-# Remove the Quotas plugin: the table emptied, the alias quota_over taken out of Firewall: Aliases -
+# Remove the Quotas plugin: the table emptied and what the coprocessor dropped for it handed back to the
+# host, once (configctl quota leave), the alias quota_over taken out of Firewall: Aliases -
 # switched off instead where a rule or a setting still names it - and out of XGS: Settings' cut list, its
 # files, its state in /var/db/os-quota (the counts with it), and the table taken out of pf. Kept: the
 # settings in config.xml.
@@ -15,7 +16,7 @@
 rm -f /usr/local/etc/cron.d/quota
 rm -f /usr/local/etc/rc.syshook.d/start/70-quota
 /bin/pkill -f '/usr/local/opnsense/scripts/[q]uota/' 2> /dev/null || true
-configctl quota flush > /dev/null 2>&1 || true
+configctl quota leave > /dev/null 2>&1 || true
 configctl quota remove > /dev/null 2>&1 || true
 
 # the hook, then everything else src/ lays down

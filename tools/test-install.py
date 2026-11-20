@@ -17,11 +17,13 @@ stand-in.
 What is checked is what the scripts do: which files are laid down with which modes, where the menu goes,
 that nothing is copied when a file has a syntax error, the page's Apply done in its order - off by
 default, so the table emptied before the alias and the table taken out of pf after the filter; on, a read
-after the filter - the table emptied and the alias taken out before the files go, the table taken out of
-pf once its alias is gone and no rule holds it, nothing of the plugin left, nothing done by the old
-package's pre-deinstall in an upgrade, and the boot's hook running one read, or nothing once the plugin is
-gone. In a removal, cron's line and the boot's hook go before a read in progress is ended, and a read is
-ended again once the scripts are gone and before the state goes, so none can write it again.
+after the filter - the table emptied for the removal (configctl quota leave, its hand-back from hardware
+done once) and the alias taken out before the files go, the table taken out of pf once its alias is gone
+and no rule holds it, nothing of the plugin left, nothing done by the old package's pre-deinstall in an
+upgrade, and the boot's hook running one read, or nothing once the plugin is gone. In a removal, cron's
+line and the boot's hook go before a read in progress is ended, and a read is ended again once the scripts
+are gone and before the state goes, so none can write it again. And every configd action the scripts and
+the page's API ask for is in the plugin's actions file.
 
     python3 tools/test-install.py"""
 import os
@@ -262,9 +264,9 @@ with tempfile.TemporaryDirectory() as tmp:
     rc, out = box.run('install/uninstall.sh')
     calls = box.called()
     check('uninstall.sh: cron\'s line and the boot\'s hook gone first, then a read in progress ended, the table emptied '
-          'and the alias taken out while the hook is there',
+          'for the removal - its hand-back from hardware done once - and the alias taken out while the hook is there',
           calls[:3], ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=no boot=no scripts=yes state=yes' % box.fake,
-                      'configctl quota flush hook=yes', 'configctl quota remove hook=yes'])
+                      'configctl quota leave hook=yes', 'configctl quota remove hook=yes'])
     check('uninstall.sh: a read ended again once the scripts are gone, before the state goes - none left to write it again',
           [c for c in calls if c.startswith('pkill')][1:],
           ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=no boot=no scripts=no state=yes' % box.fake])
@@ -317,9 +319,10 @@ with tempfile.TemporaryDirectory() as tmp:
     rc, out = box.run('pkg/pre-deinstall.sh', env={'PKG_UPGRADE': 'true'})
     check('pre-deinstall.sh in an upgrade: nothing done', (rc, box.called()), (0, []))
     rc, out = box.run('pkg/pre-deinstall.sh', env={'PKG_UPGRADE': ''})
-    check('pre-deinstall.sh in a removal: a read in progress ended, the table emptied, the alias taken out',
+    check('pre-deinstall.sh in a removal: a read in progress ended, the table emptied for the removal - its hand-back '
+          'from hardware done once - the alias taken out',
           box.called(), ['pkill -f %s/usr/local/opnsense/scripts/[q]uota/ cron=yes boot=yes scripts=yes state=yes' % box.fake,
-                         'configctl quota flush hook=yes', 'configctl quota remove hook=yes'])
+                         'configctl quota leave hook=yes', 'configctl quota remove hook=yes'])
     os.makedirs(box.fake + '/usr/local/opnsense/scripts/quota/__pycache__', exist_ok=True)
     box.write(box.fake + '/usr/local/opnsense/scripts/quota/__pycache__/account.cpython-311.pyc', 'x')
     for path in source_files():
@@ -336,6 +339,23 @@ with tempfile.TemporaryDirectory() as tmp:
           box.called('service') + box.called('configctl') + box.called('pfctl -t'),
           ['service configd restart', 'configctl filter reload skip_alias hook=no', 'configctl cron restart hook=no',
            'pfctl -t quota_over -T kill'])
+
+# every configd action the scripts and the page's API ask for is in the plugin's actions file: one that is not
+# answers "Action not found", and a removal through it would empty nothing
+with open(os.path.join(ROOT, 'src/opnsense/service/conf/actions.d/actions_quota.conf'), encoding='utf-8') as handle:
+    actions = set(re.findall(r'^\[([\w.-]+)\]$', handle.read(), re.M))
+asked = set()
+for path in ('install/install.sh', 'install/uninstall.sh', 'pkg/post-install.sh', 'pkg/pre-deinstall.sh',
+             'pkg/post-deinstall.sh'):
+    with open(os.path.join(ROOT, path), encoding='utf-8') as handle:
+        asked |= set(re.findall(r'configctl quota (\w+)', handle.read()))
+with open(os.path.join(ROOT, 'src/opnsense/mvc/app/controllers/OPNsense/Quota/Api/ServiceController.php'),
+          encoding='utf-8') as handle:
+    api = handle.read()
+asked |= set(re.findall(r"configdRun\('quota (\w+)'", api)) | set(re.findall(r"->json\('(\w+)'", api))
+check('every configd action the scripts and the page\'s API ask for is in actions_quota.conf - leave, the removal\'s, '
+      'among them', (sorted(asked - actions), sorted(asked)),
+      ([], ['account', 'apply', 'flush', 'gone', 'leave', 'remove', 'reset', 'status']))
 
 print('%d of %d checks failed' % (failures, checks) if failures else '%d checks passed' % checks)
 sys.exit(1 if failures else 0)

@@ -3,7 +3,8 @@
 #
 # Run by pkg(8) before the files of os-quota are removed. The scripts that empty the table and take the
 # alias out are packaged files: by post-deinstall they are gone. So a read in progress is ended, the
-# table emptied while its alias is there, and the alias taken out of Firewall: Aliases and XGS:
+# table emptied while its alias is there - what the coprocessor dropped for it handed back to the host,
+# once (configctl quota leave) - and the alias taken out of Firewall: Aliases and XGS:
 # Settings' cut list through OPNsense's own models - switched off instead where a rule or a setting
 # still names it.
 #
@@ -18,6 +19,6 @@ fi
 /bin/pkill -f '/usr/local/opnsense/scripts/[q]uota/' 2> /dev/null || true
 
 if [ -f /usr/local/sbin/configctl ]; then
-	/usr/local/sbin/configctl quota flush > /dev/null 2>&1 || true
+	/usr/local/sbin/configctl quota leave > /dev/null 2>&1 || true
 	/usr/local/sbin/configctl quota remove > /dev/null 2>&1 || true
 fi

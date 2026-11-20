@@ -37,7 +37,9 @@ owner's holds his addresses, never touched here.
     account.py                    one read: count, then block (cron, the page's Apply)
     account.py --reset UUID|all   a quota's counts of this cycle back to nothing, then a read
     account.py --flush            the table emptied, when it is the plugin's, and the counting paused (the
-                                  plugin off, its removal); what it held handed back from hardware
+                                  plugin off); what it held handed back from hardware
+    account.py --leave            the same for the plugin's removal, and every hand-back done once - what
+                                  the table held and what was kept to try again - as no read follows
     account.py --gone             the table taken out of pf once its alias is gone (Apply, removal)
 
 Each prints one JSON object and exits 0: it never fails its caller; what it could not do is in its answer,
@@ -278,25 +280,32 @@ def cut_here(fresh, conf, alias, project):
     return fresh
 
 
-def hand_back(state, answer, fw, left, held):
+def hand_back(state, answer, fw, left, held, leaving=False):
     """What the coprocessor dropped for the addresses quota_over has lost - `left`, and those an earlier
     read could not hand back (state['release']) - handed back to the host where os-xgs-npu is installed,
     but not for an address the table holds again (`held`): how many, in the answer as 'released', and the
     system log says it when there were some. A step left at its deadline or failed keeps its addresses for
     the next read, as os-blocklists' cut.py keeps its entries; nothing is kept without os-xgs-npu, or with a
-    hwdrop.py that cannot hand back by address."""
+    hwdrop.py that cannot hand back by address.
+
+    leaving: the plugin's removal (--leave). No read follows, so nothing is kept, and the log says what
+    is true of what the step did not hand back (enforce.release_in_hardware())."""
     pending = (set(state.pop('release', None) or ()) | set(left)) - set(held)
     if not pending or not fw.project:
         return
     addresses = sorted(pending)
-    released = enforce.release_in_hardware(addresses, fw.hwdrop, log)
+    released = enforce.release_in_hardware(addresses, fw.hwdrop, log, later=not leaving)
     if released is None:
         return
     answer['released'] = released
     if released == enforce.UNKNOWN:
-        state['release'] = addresses
+        if not leaving:
+            state['release'] = addresses
+    elif released and leaving:
+        log('%d connection(s) of %d host address(es) handed back from hardware: Quotas is being removed'
+            % (released, len(addresses)))
     elif released:
-        log('%d connection(s) of %d host address(es) no longer over their quota handed back from hardware'
+        log('%d connection(s) of %d host address(es) no longer blocked handed back from hardware'
             % (released, len(addresses)))
 
 
@@ -526,9 +535,12 @@ def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
         state = load(path)
         kept = json.dumps(state, sort_keys=True)
         now = time.time()
-        if argv[1:2] == ['--flush']:
+        if argv[1:2] in (['--flush'], ['--leave']):
+            leaving = argv[1] == '--leave'
+            mine = list(state.get('over') or [])        # what the plugin put in the table
             pause(state)
             answer = {'status': 'ok', 'emptied': None}
+            emptied = None
             if not settings.read(config)['read']:
                 answer['note'] = 'config.xml could not be read: the table is left as it is'
             elif not owned(settings.alias(config)):
@@ -538,7 +550,10 @@ def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
                 emptied = enforce.flush(pf)
                 answer['emptied'] = None if emptied is None else len(emptied)
                 state['over'] = []
-                hand_back(state, answer, fw, emptied or (), ())
+            # what the table held - at the removal, what the plugin put there where it was not emptied - and
+            # what an earlier read could not hand back; at the removal once, as no read follows
+            if emptied is not None or leaving:
+                hand_back(state, answer, fw, emptied if emptied is not None else mine, (), leaving=leaving)
             save(state, path)
             answer['errors'] = pf.errors
             print(json.dumps(answer))
