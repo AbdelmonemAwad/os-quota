@@ -43,8 +43,16 @@ configctl filter reload skip_alias > /dev/null 2>&1 || true
 configctl cron restart > /dev/null 2>&1 || true
 # The table, taken out of pf when no rule uses it: a table outlives its alias and goes on holding the
 # addresses (os-blocklists, 2026-10-29). One whose alias is still in Firewall: Aliases - switched off, as
-# something names it - is OPNsense's to keep.
+# something names it - is OPNsense's to keep. The reload above may still be loading the rules without the
+# hook when this looks - on the second XGS 3300 (2026-11-20) the table was still a rule's then, and stayed
+# in pf - so pf is given 30 seconds at most to let go of it first.
 if ! grep -q "<name>quota_over</name>" /conf/config.xml 2> /dev/null; then
+    waited=0
+    while [ ${waited} -lt 30 ] && /sbin/pfctl -v -s Tables 2> /dev/null |
+        awk '$2 == "quota_over" && $1 ~ /r/ { used = 1 } END { exit !used }'; do
+        sleep 1
+        waited=$((waited + 1))
+    done
     /sbin/pfctl -v -s Tables 2> /dev/null | awk '$2 == "quota_over" && $1 !~ /r/ { print $2 }' |
     while read -r table; do
         /sbin/pfctl -t "${table}" -T kill > /dev/null 2>&1 || true
