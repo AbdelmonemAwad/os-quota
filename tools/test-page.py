@@ -8,7 +8,7 @@ the script asks of it.
 
 What is checked: the cards for a status that cannot be read, the plugin off, a host over and one near, the
 last error, the fifth card when os-xgs-npu does not give pf the hardware's counts; the quiet lines each
-shown when it should be; the grid's formatters - the host and a MAC's addresses, the volume used of its
+shown when it should be, and what those of the cut say; the grid's formatters - the host and a MAC's addresses, the volume used of its
 limit, the minutes, the cycle and its end, each state; the Reset command asking first, then calling the
 API with the row's id; Apply from each tab; every formatter the grid's columns name defined, and every
 element the script looks for by id on the page.
@@ -219,10 +219,10 @@ check('os-xgs-npu not giving pf the hardware\'s counts: a fifth card, and the li
 check('the hardware\'s counts given to pf: four cards', len(out['unlisted']['cards']), 4)
 check('"Cut in hardware" off: the line for os-xgs-npu without "in hardware first"',
       (out['pfonly']['quiet']['qt-project'], out['pfonly']['quiet']['qt-project-pf']), (False, True))
-check('quota_over taken out of the cut list by the owner: said, and not the line that says XGS: Settings cuts',
+check('quota_over taken out of the cut list by the owner: said, and not the line that says the read cuts',
       (out['unlisted']['quiet']['qt-unlisted'], out['unlisted']['quiet']['qt-unlisted-new'],
        out['unlisted']['quiet']['qt-project'], out['unlisted']['quiet']['qt-project-pf']), (True, False, False, False))
-check('quota_over never put in the cut list: Apply puts it there, and until then the plugin cuts',
+check('quota_over not yet in the cut list: Apply puts it there, and the read that blocks cuts all the same',
       (out['unlisted_new']['quiet']['qt-unlisted-new'], out['unlisted_new']['quiet']['qt-unlisted'],
        out['unlisted_new']['quiet']['qt-project']), (True, False, False))
 check('a CARP backup: said', out['backup']['quiet']['qt-backup'], True)
@@ -265,12 +265,30 @@ asked = set(re.findall(r"\$\('#([\w-]+)'\)", SCRIPT))
 check('every element the script looks for by id is on the page, or base_form\'s',
       sorted(asked - ids), [])
 # what the page says of the overshoot and the block is what README says: not measured yet (settled point 4
-# wants it as measured), longer where XGS: Settings cuts; DNS and the GUI left to the owner's rules
+# wants it as measured), up to the read that blocks and cuts; DNS and the GUI left to the owner's rules
 note = re.search(r"lang\._\('(Each host is counted(?:[^'\\]|\\.)*)'\)", MARKUP).group(1)
-check('the note under the grid: the overshoot not measured yet, about two minutes where XGS: Settings cuts, DNS and the '
-      'GUI left to the anti-lockout and the owner\'s rules, a Pass port forward outside the block',
-      [part in note for part in ('not measured yet', 'about two minutes where XGS: Settings cuts them',
-                                 'stay as the anti-lockout rule and the owner', 'Pass filter rule')], [True] * 4)
+check('the note under the grid: the overshoot not measured yet, up to the read that blocks and cuts - no longer a '
+      'second minute for XGS: Settings - DNS and the GUI left to the anti-lockout and the owner\'s rules, a Pass port '
+      'forward outside the block',
+      [part in note for part in ('not measured yet', 'before the read that blocks it and cuts its open connections',
+                                 'two minutes', 'stay as the anti-lockout rule and the owner', 'Pass filter rule')],
+      [True, True, False, True, True])
+
+
+# what each line says of the cut: at the read that blocks, in hardware first only where "Cut in hardware" is on;
+# the owner's choice kept; no "within a minute" left on the page
+def line(ident):
+    return re.search(r'<span id="%s"[^>]*>\{\{ lang\._\(\'((?:[^\'\\]|\\.)*)\'\) \}\}</span>' % ident, MARKUP).group(1)
+
+
+check('the lines of the cut: at the read that blocks it - in hardware first with "Cut in hardware" on, all the same '
+      'while quota_over is not yet listed, never where the owner took it out - and no "within a minute" left',
+      (line('qt-project').endswith('cut at the read that blocks it, in hardware first.'),
+       line('qt-project-pf').endswith('cut at the read that blocks it.'),
+       line('qt-unlisted-new').endswith('cut all the same, at the read that blocks it.'),
+       line('qt-unlisted').endswith('keeps the connections it has open.'),
+       line('qt-alone').endswith('cut at once.'), 'within a minute' in TEXT),
+      (True, True, True, True, True, False))
 
 print('%d of %d checks failed' % (failures, checks) if failures else '%d checks passed' % checks)
 sys.exit(1 if failures else 0)

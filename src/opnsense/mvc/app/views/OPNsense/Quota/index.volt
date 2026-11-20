@@ -147,8 +147,9 @@
             }
 
             const alias = data.alias;
-            /* the plugin's alias, not in XGS: Settings' cut list: taken out by the owner (recorded), or not
-               put there yet - os-xgs-npu installed since the last Apply - when the plugin cuts itself */
+            /* the plugin's alias, not in XGS: Settings' cut list: taken out by the owner (recorded), when
+               nothing is cut, or not put there yet - os-xgs-npu installed since the last Apply - when the
+               read that blocks a host cuts all the same */
             const unlisted = on && !!data.project && !!alias && alias.ours && !data.cut_listed;
             $('#qt-off').toggle(!on);
             $('#qt-project').toggle(on && !!data.project && !unlisted && data.cut_in_hardware !== false);
@@ -304,12 +305,12 @@
 <div class="text-muted clearfix qt-quiet" style="padding: 0 0 10px;">
     <button id="refreshAct" class="btn btn-default btn-xs pull-right" type="button" title="{{ lang._('Refresh') }}"><i class="fa fa-fw fa-refresh"></i></button>
     <span id="qt-off" style="display: none;">{{ lang._('Quotas is off: nothing is counted and no host is blocked.') }}</span>
-    <span id="qt-project" style="display: none;">{{ lang._('os-xgs-npu is installed: a connection in hardware is counted through its pf states, and a host that goes over its quota has its open connections cut by XGS: Settings within a minute, in hardware first.') }}</span>
-    <span id="qt-project-pf" style="display: none;">{{ lang._('os-xgs-npu is installed: a connection in hardware is counted through its pf states, and a host that goes over its quota has its open connections cut by XGS: Settings within a minute.') }}</span>
+    <span id="qt-project" style="display: none;">{{ lang._('os-xgs-npu is installed: a connection in hardware is counted through its pf states, and a host that goes over its quota has its open connections cut at the read that blocks it, in hardware first.') }}</span>
+    <span id="qt-project-pf" style="display: none;">{{ lang._('os-xgs-npu is installed: a connection in hardware is counted through its pf states, and a host that goes over its quota has its open connections cut at the read that blocks it.') }}</span>
     <span id="qt-alone" style="display: none;">{{ lang._('Without os-xgs-npu pf alone carries the traffic: a host that goes over its quota has its open connections cut at once.') }}</span>
     <span id="qt-backup" class="text-warning" style="display: none;">{{ lang._('This firewall is a CARP backup: the master counts and blocks, and nothing is counted here.') }}</span>
     <span id="qt-unlisted" class="text-warning" style="display: none;">{{ lang._('quota_over is not in the cut list of XGS: Settings: a host that goes over its quota keeps the connections it has open.') }}</span>
-    <span id="qt-unlisted-new" class="text-warning" style="display: none;">{{ lang._('quota_over is not in the cut list of XGS: Settings yet - Apply puts it there. Until then this plugin cuts the open connections of a host that goes over its quota itself, at once.') }}</span>
+    <span id="qt-unlisted-new" class="text-warning" style="display: none;">{{ lang._('quota_over is not in the cut list of XGS: Settings yet - Apply puts it there. A host that goes over its quota has its open connections cut all the same, at the read that blocks it.') }}</span>
     <span id="qt-noalias" class="text-warning" style="display: none;">{{ lang._('The alias quota_over is not made yet: Apply makes it. Until then no host is blocked.') }}</span>
     <span id="qt-notours" class="text-warning" style="display: none;">{{ lang._('An alias named quota_over that is not this plugin\'s is in Firewall: Aliases: no host is blocked until it is renamed.') }}</span>
 </div>
@@ -347,7 +348,7 @@
             </tfoot>
         </table>
         <div class="text-muted qt-note">
-            {{ lang._('Each host is counted from pf\'s states once a minute: every byte of its connections, to and from the firewall itself too, and what the coprocessor forwards where os-xgs-npu gives pf its counts. A host goes past its limit by what it moves before it is blocked and its open connections are cut: not measured yet - up to about a minute of its traffic, about two minutes where XGS: Settings cuts them. Over its quota it is blocked until its cycle starts again or its count is reset here; DNS and the web GUI on the firewall stay as the anti-lockout rule and the owner\'s own rules make them, and what a port forward with a Pass filter rule lets in is not blocked.') }}
+            {{ lang._('Each host is counted from pf\'s states once a minute: every byte of its connections, to and from the firewall itself too, and what the coprocessor forwards where os-xgs-npu gives pf its counts. A host goes past its limit by what it moves before the read that blocks it and cuts its open connections: not measured yet - up to about a minute of its traffic. Over its quota it is blocked until its cycle starts again or its count is reset here; DNS and the web GUI on the firewall stay as the anti-lockout rule and the owner\'s own rules make them, and what a port forward with a Pass filter rule lets in is not blocked.') }}
         </div>
         <div class="text-muted qt-note">
             {{ lang._('Changes here are counted from the next minute\'s read, or at once with Apply.') }}
