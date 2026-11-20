@@ -38,9 +38,12 @@ and then the pf cut goes on whatever it is doing (within()), its count "unknown"
 configd and the boot run the read.
 
 Leaving the table cuts nothing: a host whose cycle starts again just passes again. A connection the
-coprocessor dropped stays dropped there while its sender goes on sending it, as hwdrop leaves it - here
-or by lists_cut.py - and nothing here hands it back yet (hwdrop.release_addresses(), as os-blocklists'
-cut.py calls it for the entries a list lost); a connection made again passes.
+coprocessor dropped - here or by lists_cut.py - stays dropped there while its sender goes on sending it,
+whatever the table says after, so where os-xgs-npu is installed the read that takes an address out of the
+table hands its connections back to the host (release_in_hardware(), hwdrop.release_addresses(), as
+os-blocklists' cut.py hands back the entries a list lost), and pf decides their frames again: a sender that
+kept sending all along gets through again. Its step has the same HW_DEADLINE and thread as the drop and
+stops no read; one left at its deadline or failed is tried again at the next read (account.hand_back()).
 """
 
 import importlib.util
@@ -221,6 +224,18 @@ def within(seconds, what, *args):
     return done.get('value')
 
 
+def ends(addresses):
+    """The addresses as hwdrop writes a connection's ends - str(ipaddress.ip_address(...)), IPv6 in its
+    short form - and none that is not an address."""
+    out = set()
+    for a in addresses:
+        try:
+            out.add(str(ipaddress.ip_address(a)))
+        except ValueError:
+            continue
+    return out
+
+
 def drop_in_hardware(addresses, path, say=None):
     """Every connection with an end among addresses dropped on the coprocessor by os-xgs-npu's hwdrop at
     path, before their pf states are killed: how many it took DROP for - 0 with "Cut in hardware" off,
@@ -231,13 +246,7 @@ def drop_in_hardware(addresses, path, say=None):
     hw = hwdrop(path, say)
     if hw is None:
         return None
-    # as hwdrop writes a connection's ends: str(ipaddress.ip_address(...))
-    match = set()
-    for a in addresses:
-        try:
-            match.add(str(ipaddress.ip_address(a)))
-        except ValueError:
-            continue
+    match = ends(addresses)
     try:
         return int(within(HW_DEADLINE, lambda stop: hw.drop_addresses(Until(match, stop))) or 0)
     except HardwareBusy:
@@ -251,14 +260,40 @@ def drop_in_hardware(addresses, path, say=None):
     return UNKNOWN
 
 
+def release_in_hardware(addresses, path, say=None):
+    """Every connection with an end among addresses - what quota_over has lost - handed back to the host by
+    os-xgs-npu's hwdrop at path, as os-blocklists' cut.py hands back the entries a list lost: a connection
+    the coprocessor dropped stays dropped there while its sender goes on sending, whatever the table says
+    after (os-xgs-npu's REMAINING A15); handed back, pf decides its frames again. "Cut in hardware" is not
+    asked: one dropped while it was on is handed back once it is off as well. How many the driver handed
+    back; UNKNOWN when the step was left at its deadline or failed - the caller tries them again at the next
+    read; None without hwdrop.py, one that does not load, or one older than its release_addresses, which
+    hands nothing back by address."""
+    say = say or (lambda message: None)
+    hw = hwdrop(path, say)
+    if hw is None or not hasattr(hw, 'release_addresses'):
+        return None
+    match = ends(addresses)
+    try:
+        return int(within(HW_DEADLINE, lambda stop: hw.release_addresses(Until(match, stop))) or 0)
+    except HardwareBusy:
+        say('the hand-back from hardware: a step left at its deadline still runs, none started beside it; '
+            'tried again at the next read')
+    except HardwareLate:
+        say('the hand-back from hardware took more than %d s: left there, tried again at the next read' % HW_DEADLINE)
+    except Exception as error:      # hwdrop says it never raises; nothing here is stopped by it if it does
+        say('the hand-back from hardware failed, tried again at the next read: %s' % error)
+    return UNKNOWN
+
+
 def flush(pf):
-    """The table emptied: how many addresses it held, or None when there is no such table."""
+    """The table emptied: the addresses it held, sorted, or None when there is no such table."""
     held = pf.show()
     if held is None:
         return None
     if held:
         pf.change('delete', sorted(held))
-    return len(held)
+    return sorted(held)
 
 
 def kill_table(pf):

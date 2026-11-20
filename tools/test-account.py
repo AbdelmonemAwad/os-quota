@@ -28,12 +28,19 @@ What is checked:
     pf state is killed, with the host's addresses alone; its count in the answer and the system log; the
     pf cut going on without it - hwdrop.py missing or not loading, raising, past its deadline or stuck in
     the driver - and nothing asked of it without os-xgs-npu; within() itself;
+  - the hand-back: an address the table loses - a Reset, a new cycle, its quota removed or given another
+    host, a MAC's address changed, the plugin off at the minute's read and at --flush - handed back from
+    hardware, one it keeps not; its count in the answer and the log; hwdrop missing, older than
+    release_addresses, raising or late: the read goes on, and what was not handed back is tried at the
+    next read unless the table holds it again; nothing without os-xgs-npu;
   - off, a CARP backup, the interfaces unreadable: nothing counted, and off the table emptied;
   - a reset by hand; the command line - one read, --flush, --gone, --reset - its lock, its answer when a
     read stops; and the page's status.
 
     python3 tools/test-account.py"""
 import calendar
+import contextlib
+import io
 import ipaddress
 import json
 import os
@@ -612,21 +619,34 @@ def pages():
         hwdrop_events.lock.clear()
 
 
-def drop_addresses(contains, path='/conf/config.xml'):
-    hwdrop_events.events.append(('drop_addresses', sorted(a for a in hwdrop_events.probe if a in contains)))
+def walk(contains):
+    dropped = 0
+    for i in pages():
+        if hwdrop_events.probe[0] in contains:
+            hwdrop_events.events.append(('verdict', i, time.monotonic()))
+            dropped += 1
+    return dropped
+
+
+def answer(contains):
     if hwdrop_events.result == 'slow':
-        dropped = 0
-        for i in pages():
-            if hwdrop_events.probe[0] in contains:
-                hwdrop_events.events.append(('verdict', i, time.monotonic()))
-                dropped += 1
-        return dropped
+        return walk(contains)
     if hwdrop_events.result == 'stuck':
         time.sleep(3)
         return 9
     if hwdrop_events.result is None:
         raise RuntimeError('no table')
     return hwdrop_events.result
+
+
+def drop_addresses(contains, path='/conf/config.xml'):
+    hwdrop_events.events.append(('drop_addresses', sorted(a for a in hwdrop_events.probe if a in contains)))
+    return answer(contains)
+
+
+def release_addresses(contains):
+    hwdrop_events.events.append(('release_addresses', sorted(a for a in hwdrop_events.probe if a in contains)))
+    return answer(contains)
 '''
 EVENTS = types.ModuleType('hwdrop_events')
 EVENTS.events, EVENTS.probe, EVENTS.result, EVENTS.lock, EVENTS.conns, EVENTS.each = [], [], 0, [], 20, 0.3
@@ -639,10 +659,17 @@ with open(HWDROP, 'w', encoding='utf-8') as handle:
 with open(os.path.join(hardware.name, 'xgs', 'flows.py'), 'w', encoding='utf-8') as handle:
     handle.write('')
 NO_HWDROP = os.path.join(hardware.name, 'absent', 'hwdrop.py')
+# an os-xgs-npu older than hwdrop's release_addresses (2026-11-17): it drops, and hands nothing back by address
+OLDER = os.path.join(hardware.name, 'older', 'hwdrop.py')
+os.makedirs(os.path.dirname(OLDER))
+with open(OLDER, 'w', encoding='utf-8') as handle:
+    handle.write(FAKE_HWDROP[:FAKE_HWDROP.index('def release_addresses')])
+with open(os.path.join(os.path.dirname(OLDER), 'flows.py'), 'w', encoding='utf-8') as handle:
+    handle.write('')
 
 
 def kinds(events):
-    return [e[0] for e in events if e[0] in ('drop_addresses', 'kill')]
+    return [e[0] for e in events if e[0] in ('drop_addresses', 'release_addresses', 'kill')]
 
 
 def settle(wait=6):
@@ -765,6 +792,154 @@ finally:
 check('... it ends', settle(), True)
 answer, events, logged, took, kept = hw_over(3)
 check('... and then the hardware step runs again', answer.get('dropped'), 3)
+# the hand-back: what the coprocessor dropped for an address the table loses, handed back to the host
+QB = quota(U2, '192.0.2.11', volume=MB, description='Lab')
+
+
+def blocked(quotas=None, path=HWDROP, project=True, table=None):
+    """Hosts gone over their volume quotas at t0 + 60 - their connections dropped in hardware and cut -
+    with os-xgs-npu's hwdrop.py at path: (state, pf, firewall) for the reads after. pf forgets a state it
+    kills."""
+    EVENTS.events[:], EVENTS.result, EVENTS.lock[:] = [], 3, []
+    EVENTS.probe = ['192.0.2.10', '192.0.2.11', '2001:db8:1::10', '2001:db8:1::77', '198.51.100.7']
+    state = {}
+    quotas = quotas or [qv]
+    pf = FakePf(pair(50123, 0, 0, 1, ['0001', '0002']) + pair(50124, 0, 0, 1, ['0003', '0004'], host='192.0.2.11'),
+                table=set(), events=EVENTS.events, vanish=True)
+    firewall = FakeFw(project=project, hwdrop=path, table=table)
+    account.tick(state, conf(*quotas, **LISTED), OURS, pf, firewall, t0)
+    pf.text = (pair(50123, 2 * MB, 0, 61, ['0001', '0002']) +
+               pair(50124, 2 * MB, 0, 61, ['0003', '0004'], host='192.0.2.11'))
+    account.tick(state, conf(*quotas, **LISTED), OURS, pf, firewall, t0 + 60)
+    return state, pf, firewall
+
+
+def later(state, pf, firewall, result, when, quotas=None, enabled=True):
+    """One read after, hwdrop answering result: (its answer, what happened in order, what the log was told,
+    the read's seconds)."""
+    EVENTS.events[:], EVENTS.result, EVENTS.lock[:] = [], result, []
+    LOGGED.clear()
+    started = time.monotonic()
+    answer = account.tick(state, conf(*(quotas or [qv]), enabled=enabled, **LISTED), OURS, pf, firewall, when)
+    return answer, list(EVENTS.events), list(LOGGED), time.monotonic() - started
+
+
+def back_lines(logged):
+    return [m for m in logged if 'handed back from hardware' in m]
+
+
+state, pf, firewall = blocked()
+dropped_first = (pf.table, sorted(pf.killed))
+account.reset(state, U1, conf(qv, **LISTED))
+answer, events, logged, took = later(state, pf, firewall, 2, t0 + 70)
+check('a Reset: the host out of the table, and what the coprocessor dropped for it handed back - its address alone, '
+      'once', (dropped_first, pf.table, kinds(events), events[:1]),
+      (({'192.0.2.10'}, ['0001/44128282', '0002/44128282']), set(), ['release_addresses'],
+       [('release_addresses', ['192.0.2.10'])]))
+check('... how many in the answer and the system log, nothing kept', (answer.get('released'), back_lines(logged),
+                                                                     'release' in state),
+      (2, ['2 connection(s) of 1 host address(es) no longer over their quota handed back from hardware'], False))
+answer, events, logged, took = later(state, pf, firewall, 2, t0 + 130)
+check('... and the next read hands back nothing again', (events, 'released' in answer), ([], False))
+# two hosts over, one reset: the other stays blocked, and dropped
+state, pf, firewall = blocked(quotas=[qv, QB])
+account.reset(state, U1, conf(qv, QB, **LISTED))
+answer, events, logged, took = later(state, pf, firewall, 2, t0 + 70, quotas=[qv, QB])
+check('two hosts over, one reset: its address handed back, the other\'s not - still in the table',
+      (events, pf.table), ([('release_addresses', ['192.0.2.10'])], {'192.0.2.11'}))
+# a quota removed
+state, pf, firewall = blocked(quotas=[qv, QB])
+answer, events, logged, took = later(state, pf, firewall, 1, t0 + 120, quotas=[QB])
+check('a quota removed: its host\'s address handed back, the other host\'s kept blocked',
+      (events, answer.get('released'), pf.table), ([('release_addresses', ['192.0.2.10'])], 1, {'192.0.2.11'}))
+state, pf, firewall = blocked()
+answer, events, logged, took = later(state, pf, firewall, 1, t0 + 120, quotas=[quota(U1, '192.0.2.12', volume=MB)])
+check('a quota given another host: the old one\'s address handed back, the new one not blocked',
+      (events, answer.get('released'), pf.table), ([('release_addresses', ['192.0.2.10'])], 1, set()))
+# a cycle that starts again
+state, pf, firewall = blocked()
+answer, events, logged, took = later(state, pf, firewall, 2, utc(2026, 11, 21, 0, 0, 30))
+check('a new cycle: the host passes again, and what was dropped for it is handed back',
+      (pf.table, events, answer.get('released')), (set(), [('release_addresses', ['192.0.2.10'])], 2))
+# the plugin turned off: the minute's read, and Apply's --flush
+state, pf, firewall = blocked()
+answer, events, logged, took = later(state, pf, firewall, 2, t0 + 120, enabled=False)
+check('the plugin off, the minute\'s read: the table emptied, its address handed back',
+      (answer['status'], pf.table, events, answer.get('released')),
+      ('off', set(), [('release_addresses', ['192.0.2.10'])], 2))
+calls = len(pf.calls)
+answer, events, logged, took = later(state, pf, firewall, 2, t0 + 180, enabled=False)
+check('... the next read while off: nothing asked of pf or hwdrop', (len(pf.calls) - calls, events, 'released' in answer),
+      (0, [], False))
+state, pf, firewall = blocked()
+flushed = os.path.join(hardware.name, 'flush')
+os.makedirs(flushed)
+with open(os.path.join(flushed, 'config.xml'), 'w', encoding='utf-8') as handle:
+    handle.write('<opnsense><OPNsense><Quota><general><enabled>0</enabled></general></Quota><Firewall><Alias><aliases>'
+                 '<alias uuid="%s"><enabled>1</enabled><name>quota_over</name><type>external</type><description>Quotas: '
+                 'hosts over their quota</description></alias></aliases></Alias></Firewall></OPNsense></opnsense>'
+                 % OURS['uuid'])
+account.save(state, os.path.join(flushed, 'state.json'))
+EVENTS.events[:], EVENTS.result = [], 2
+said = io.StringIO()
+with contextlib.redirect_stdout(said):
+    account.main(['account.py', '--flush'], pf=pf, fw=firewall, config=os.path.join(flushed, 'config.xml'),
+                 path=os.path.join(flushed, 'state.json'), lock=os.path.join(flushed, 'account.lock'))
+out = json.loads(said.getvalue())
+check('account.py --flush (Apply turning it off, the removal): the table emptied, what it held handed back',
+      (out['emptied'], pf.table, EVENTS.events[:], out.get('released')),
+      (1, set(), [('release_addresses', ['192.0.2.10'])], 2))
+# without os-xgs-npu, with no hwdrop.py, with one older than release_addresses: nothing handed back, nothing kept
+for what, kwargs in (('without os-xgs-npu', {'project': False}), ('with no hwdrop.py', {'path': NO_HWDROP}),
+                     ('with a hwdrop.py older than release_addresses', {'path': OLDER})):
+    state, pf, firewall = blocked(**kwargs)
+    account.reset(state, U1, conf(qv, **LISTED))
+    answer, events, logged, took = later(state, pf, firewall, 2, t0 + 70)
+    check('%s: the host out of the table, nothing handed back, nothing kept, nothing said' % what,
+          (pf.table, kinds(events), 'released' in answer, 'release' in state, back_lines(logged), answer['status']),
+          (set(), [], False, False, [], 'ok'))
+# hwdrop raising: the read goes on; the address kept and handed back at the next read
+state, pf, firewall = blocked()
+account.reset(state, U1, conf(qv, **LISTED))
+answer, events, logged, took = later(state, pf, firewall, None, t0 + 70)
+check('the hand-back raising: the read goes on - the host out of the table, the answer ok - how many not known, '
+      'its address kept, said', (answer['status'], pf.table, answer.get('released'), state.get('release'),
+                                 any('failed' in m and 'tried again at the next read' in m for m in logged)),
+      ('ok', set(), 'unknown', ['192.0.2.10'], True))
+answer, events, logged, took = later(state, pf, firewall, 2, t0 + 130)
+check('... the next read hands it back, and keeps nothing', (events, answer.get('released'), 'release' in state),
+      ([('release_addresses', ['192.0.2.10'])], 2, False))
+# past its deadline: the read goes on at once, the address kept
+state, pf, firewall = blocked()
+account.reset(state, U1, conf(qv, **LISTED))
+enforce.HW_DEADLINE = 1
+try:
+    answer, events, logged, took = later(state, pf, firewall, 'slow', t0 + 70)
+finally:
+    enforce.HW_DEADLINE = saved
+check('the hand-back past its deadline (1 s here): left there, the read done in %.2f s, how many not known, the '
+      'address kept, said' % took, (took < 1.6, answer['status'], pf.table, answer.get('released'),
+                                    state.get('release'), any('took more than 1 s' in m for m in logged)),
+      (True, 'ok', set(), 'unknown', ['192.0.2.10'], True))
+check('... it ends', settle(), True)
+# kept, and over its quota again at the next read: blocked and dropped again, not handed back
+pf.text = pair(50300, 2 * MB, 0, 5, ['0201', '0202'])
+answer, events, logged, took = later(state, pf, firewall, 3, t0 + 80)
+check('an address kept for the hand-back, back in the table before it: dropped and cut again, not handed back, '
+      'no longer kept', (pf.table, kinds(events), 'released' in answer, 'release' in state),
+      ({'192.0.2.10'}, ['drop_addresses', 'kill', 'kill'], False, False))
+# a MAC's address changed while it is blocked: the new one dropped and cut, the old one handed back, in that order
+state, pf, firewall = blocked(quotas=[quota(U1, '02:00:00:aa:bb:cc', volume=MB)],
+                              table={'02:00:00:aa:bb:cc': ['192.0.2.10', '2001:db8:1::10']})
+firewall.table['02:00:00:aa:bb:cc'] = ['192.0.2.10', '2001:db8:1::77']
+answer, events, logged, took = later(state, pf, firewall, 1, t0 + 120, quotas=[quota(U1, '02:00:00:aa:bb:cc', volume=MB)])
+check('a MAC\'s IPv6 address changed while it is blocked: the new one dropped first, the old one handed back after',
+      (sorted(pf.table), events, answer.get('released')),
+      (['192.0.2.10', '2001:db8:1::77'], [('drop_addresses', ['2001:db8:1::77']), ('release_addresses', ['2001:db8:1::10'])],
+       1))
+check('release_in_hardware with no hwdrop.py, and with one older than release_addresses: None',
+      (enforce.release_in_hardware(['192.0.2.10'], NO_HWDROP), enforce.release_in_hardware(['192.0.2.10'], OLDER)),
+      (None, None))
 # the step itself
 EVENTS.events[:], EVENTS.result = [], 2
 check('drop_in_hardware: the addresses as hwdrop writes a connection\'s ends - IPv6 in its short form - and one '

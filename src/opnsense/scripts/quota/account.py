@@ -21,7 +21,9 @@ Each read:
   6. the addresses of every host over a quota put in the table, the others taken out (enforce.py), and
      the connections such a host has open cut by this read, at once (settled point 6): on the coprocessor
      first where os-xgs-npu is installed, then their pf states - with os-xgs-npu or without it, but not
-     where the owner took quota_over out of XGS: Settings' cut list (cut_here()).
+     where the owner took quota_over out of XGS: Settings' cut list (cut_here()); and where os-xgs-npu is
+     installed, what the coprocessor dropped for an address the table has lost handed back to the host -
+     a cycle started again, a Reset, a quota changed or removed, the plugin off (hand_back()).
 
 Everything is kept in /var/db/os-quota/state.json after each read - the counts of the cycle, the last
 read's per-connection counts - so a restart or a boot in the middle of a cycle loses no count and counts
@@ -35,7 +37,7 @@ owner's holds his addresses, never touched here.
     account.py                    one read: count, then block (cron, the page's Apply)
     account.py --reset UUID|all   a quota's counts of this cycle back to nothing, then a read
     account.py --flush            the table emptied, when it is the plugin's, and the counting paused (the
-                                  plugin off, its removal)
+                                  plugin off, its removal); what it held handed back from hardware
     account.py --gone             the table taken out of pf once its alias is gone (Apply, removal)
 
 Each prints one JSON object and exits 0: it never fails its caller; what it could not do is in its answer,
@@ -276,6 +278,28 @@ def cut_here(fresh, conf, alias, project):
     return fresh
 
 
+def hand_back(state, answer, fw, left, held):
+    """What the coprocessor dropped for the addresses quota_over has lost - `left`, and those an earlier
+    read could not hand back (state['release']) - handed back to the host where os-xgs-npu is installed,
+    but not for an address the table holds again (`held`): how many, in the answer as 'released', and the
+    system log says it when there were some. A step left at its deadline or failed keeps its addresses for
+    the next read, as os-blocklists' cut.py keeps its entries; nothing is kept without os-xgs-npu, or with a
+    hwdrop.py that cannot hand back by address."""
+    pending = (set(state.pop('release', None) or ()) | set(left)) - set(held)
+    if not pending or not fw.project:
+        return
+    addresses = sorted(pending)
+    released = enforce.release_in_hardware(addresses, fw.hwdrop, log)
+    if released is None:
+        return
+    answer['released'] = released
+    if released == enforce.UNKNOWN:
+        state['release'] = addresses
+    elif released:
+        log('%d connection(s) of %d host address(es) no longer over their quota handed back from hardware'
+            % (released, len(addresses)))
+
+
 def cut_said(cut, hosts, dropped):
     """The system log's line for a cut: how many connections of how many addresses, and how many the
     coprocessor dropped first where os-xgs-npu's hwdrop was asked (dropped None: it was not)."""
@@ -297,9 +321,12 @@ def tick(state, conf, alias, pf, fw, now):
     if not conf['enabled']:
         pause(state)
         state['role'] = None
+        emptied = None
         if state.get('over') and owned(alias):
-            enforce.flush(pf)
+            emptied = enforce.flush(pf)
         state['over'] = []
+        # what was in the table, and what an earlier read could not hand back: off, nothing is blocked
+        hand_back(state, answer, fw, emptied or (), ())
         answer['status'] = 'off'
         return answer
 
@@ -421,6 +448,9 @@ def tick(state, conf, alias, pf, fw, now):
                 answer['dropped'] = dropped
             if answer['cut'] or dropped:
                 log(cut_said(answer['cut'], len(to_cut), dropped))
+        # what the table has lost - a cycle started again, a Reset, a quota changed or removed - handed back
+        # from hardware, its sender's frames decided by pf again
+        hand_back(state, answer, fw, removed, over)
         state['blocking'] = True
         if len(pf.errors) > known:
             note_error(state, '; '.join(pf.errors[known:]), now)
@@ -484,6 +514,7 @@ class Lock:
 
 def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
     pf = pf or enforce.Pf()
+    fw = fw or Firewall()
     one = Lock(lock)
     with one as held:
         if not held and one.gone:
@@ -504,8 +535,10 @@ def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
                 answer['note'] = 'an alias named %s that is not this plugin\'s holds the table: left as it is' % settings.ALIAS
                 state['over'] = []
             else:
-                answer['emptied'] = enforce.flush(pf)
+                emptied = enforce.flush(pf)
+                answer['emptied'] = None if emptied is None else len(emptied)
                 state['over'] = []
+                hand_back(state, answer, fw, emptied or (), ())
             save(state, path)
             answer['errors'] = pf.errors
             print(json.dumps(answer))
@@ -530,7 +563,7 @@ def main(argv, pf=None, fw=None, config=None, path=STATE, lock=LOCK):
                 return 0
             done = reset(state, which, conf)
         try:
-            answer = tick(state, conf, settings.alias(config), pf, fw or Firewall(), now)
+            answer = tick(state, conf, settings.alias(config), pf, fw, now)
         except Exception as error:      # never fail the caller: cron or the page
             note_error(state, 'the read stopped: %s' % error, now)
             answer = {'status': 'failed', 'message': str(error)}
